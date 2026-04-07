@@ -65,6 +65,7 @@ class QueueScreen(Screen):
         table.add_columns("Job", "Type", "Iter", "Status", "Elapsed", "Summary")
         self._load_data()
         self._refresh_timer = self.set_interval(0.5, self._load_data)
+        table.focus()
 
     def on_unmount(self) -> None:
         self._refresh_timer.stop()
