@@ -297,6 +297,98 @@ def run_cluster(
     return {"n_clusters": n_clusters, "n_noise": n_noise, "job_id": job_id}
 
 
+def run_validate(
+    project_dir: Path,
+    truth_path: Path,
+    buffer_m: int = 500,
+    use_clusters: bool = True,
+) -> Dict:
+    import geopandas as gpd
+    import shapely.wkb
+    from shapely.geometry import Point
+    from shapely.ops import nearest_points
+
+    start = time.perf_counter()
+
+    truth = gpd.read_file(truth_path)
+    if truth.crs and truth.crs.to_epsg() != 4326:
+        truth = truth.to_crs(4326)
+    click.echo(f"Ground truth: {len(truth)} points")
+
+    reviews = load_reviews(project_dir)
+    if reviews.empty:
+        click.echo("No detections to validate")
+        return {}
+
+    valid_mask = reviews["geometry"].notna()
+    det_points = []
+    for geom_bytes in reviews[valid_mask]["geometry"]:
+        point = shapely.wkb.loads(geom_bytes)
+        det_points.append(point)
+
+    if use_clusters:
+        cluster_ids = reviews.loc[valid_mask, "cluster_id"]
+        det_df = gpd.GeoDataFrame(
+            {"cluster_id": cluster_ids.values, "geometry": det_points},
+            crs="EPSG:4326",
+        )
+        clustered = det_df[det_df["cluster_id"].notna() & (det_df["cluster_id"] >= 0)]
+        dissolved = clustered.to_crs(3857).dissolve(by="cluster_id")
+        centroid_geoms = dissolved.centroid.to_crs(4326)
+        det_gdf = gpd.GeoDataFrame(geometry=centroid_geoms.values, crs="EPSG:4326")
+        click.echo(f"Detections: {len(det_gdf)} cluster centroids")
+    else:
+        det_gdf = gpd.GeoDataFrame({"geometry": det_points}, crs="EPSG:4326")
+        click.echo(f"Detections: {len(det_gdf)} raw points")
+
+    # Project to a metric CRS for distance calculations
+    det_proj = det_gdf.to_crs(3857)
+    truth_proj = truth.to_crs(3857)
+
+    # For each truth point, find nearest detection
+    from shapely import STRtree
+    det_tree = STRtree(det_proj.geometry.values)
+
+    tp = 0
+    fn_list = []
+    for idx, truth_row in truth_proj.iterrows():
+        nearest_idx = det_tree.nearest(truth_row.geometry)
+        nearest_det = det_proj.geometry.values[nearest_idx]
+        dist = truth_row.geometry.distance(nearest_det)
+        if dist <= buffer_m:
+            tp += 1
+        else:
+            fn_list.append(idx)
+
+    # For each detection, check if any truth within buffer
+    truth_tree = STRtree(truth_proj.geometry.values)
+    fp = 0
+    for det_geom in det_proj.geometry.values:
+        nearest_idx = truth_tree.nearest(det_geom)
+        nearest_truth = truth_proj.geometry.values[nearest_idx]
+        dist = det_geom.distance(nearest_truth)
+        if dist > buffer_m:
+            fp += 1
+
+    fn = len(truth) - tp
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+
+    elapsed = time.perf_counter() - start
+
+    click.echo(f"\nValidation results (buffer={buffer_m}m):")
+    click.echo(f"  True positives:  {tp}")
+    click.echo(f"  False positives: {fp}")
+    click.echo(f"  False negatives: {fn}")
+    click.echo(f"  Precision: {precision:.3f}")
+    click.echo(f"  Recall:    {recall:.3f}")
+    click.echo(f"  F1:        {f1:.3f}")
+    click.echo(f"  ({elapsed:.1f}s)")
+
+    return {"tp": tp, "fp": fp, "fn": fn, "precision": precision, "recall": recall, "f1": f1}
+
+
 def _load_label_file(path: Path) -> pd.DataFrame:
     suffix = path.suffix.lower()
     if suffix == ".parquet":

@@ -108,12 +108,16 @@ def cluster(eps, min_samples):
 
 
 @cli.command()
-@click.option("--detections", required=True, type=click.Path(exists=True))
 @click.option("--truth", required=True, type=click.Path(exists=True))
 @click.option("--buffer", default=500, type=int, help="Match buffer in meters")
-def validate(detections, truth, buffer):
+@click.option("--use-clusters/--no-clusters", default=True, help="Use cluster centroids instead of raw detections")
+def validate(truth, buffer, use_clusters):
     """Validate detections against ground truth."""
-    click.echo("Not yet implemented")
+    from geovibes.cli.pipeline import run_validate
+
+    config = load_project()
+    project_dir = config["_project_dir"]
+    run_validate(project_dir=project_dir, truth_path=Path(truth), buffer_m=buffer, use_clusters=use_clusters)
 
 
 @cli.command()
