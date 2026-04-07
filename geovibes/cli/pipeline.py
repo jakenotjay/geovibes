@@ -305,9 +305,14 @@ def _load_label_file(path: Path) -> pd.DataFrame:
     else:
         raise ValueError(f"Unsupported label file format: {suffix}")
 
+    if "id" not in df.columns and "tile_id" in df.columns:
+        df["id"] = df["tile_id"]
+
     missing = [col for col in ("id", "label") if col not in df.columns]
     if missing:
         raise ValueError(f"Label file {path.name} missing required columns: {missing}")
+
+    df["id"] = df["id"].astype(int)
     return df
 
 
