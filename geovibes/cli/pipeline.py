@@ -287,16 +287,21 @@ def run_cluster(
 def _load_label_file(path: Path) -> pd.DataFrame:
     suffix = path.suffix.lower()
     if suffix == ".parquet":
-        return pd.read_parquet(path)
+        df = pd.read_parquet(path)
     elif suffix == ".geojson" or suffix == ".json":
         import geopandas as gpd
-        gdf = gpd.read_file(path)
-        if "label" not in gdf.columns and "class" in gdf.columns:
-            gdf["label"] = gdf["class"].map(
+        df = gpd.read_file(path)
+        if "label" not in df.columns and "class" in df.columns:
+            df["label"] = df["class"].map(
                 lambda c: 1 if "pos" in str(c).lower() else 0
             )
-        return gdf
-    raise ValueError(f"Unsupported label file format: {suffix}")
+    else:
+        raise ValueError(f"Unsupported label file format: {suffix}")
+
+    missing = [col for col in ("id", "label") if col not in df.columns]
+    if missing:
+        raise ValueError(f"Label file {path.name} missing required columns: {missing}")
+    return df
 
 
 def _fetch_all_embeddings(conn, point_ids: List) -> pd.DataFrame:

@@ -107,45 +107,50 @@ def _create_duckdb(db_path: Path, embeddings: np.ndarray, lons: np.ndarray, lats
     click.echo(f"Creating DuckDB at {db_path}...")
     start = time.perf_counter()
 
-    conn = duckdb.connect(str(db_path))
-    conn.execute("INSTALL spatial; LOAD spatial;")
-    conn.execute("SET memory_limit='24GB'")
-
     n, dim = embeddings.shape
-    conn.execute(f"""
-        CREATE TABLE geo_embeddings (
-            id BIGINT PRIMARY KEY,
-            embedding FLOAT[{dim}],
-            geometry GEOMETRY
-        )
-    """)
+    if not isinstance(dim, (int, np.integer)) or dim <= 0:
+        raise ValueError(f"Invalid embedding dimension: {dim}")
 
-    chunk_size = 50_000
-    for i in range(0, n, chunk_size):
-        end = min(i + chunk_size, n)
-        chunk_emb = embeddings[i:end]
-        chunk_lon = lons[i:end]
-        chunk_lat = lats[i:end]
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute("SET memory_limit='24GB'")
 
-        values = []
-        for j in range(end - i):
-            emb_list = chunk_emb[j].tolist()
-            values.append((i + j, emb_list, chunk_lon[j], chunk_lat[j]))
+        conn.execute(f"""
+            CREATE TABLE geo_embeddings (
+                id BIGINT PRIMARY KEY,
+                embedding FLOAT[{int(dim)}],
+                geometry GEOMETRY
+            )
+        """)
 
-        conn.executemany(
-            "INSERT INTO geo_embeddings VALUES (?, ?::FLOAT[], ST_Point(?, ?))",
-            values,
-        )
-        click.echo(f"  Inserted {end:,}/{n:,}", nl=False)
-        click.echo("\r", nl=False)
+        chunk_size = 50_000
+        for i in range(0, n, chunk_size):
+            end = min(i + chunk_size, n)
+            chunk_emb = embeddings[i:end]
+            chunk_lon = lons[i:end]
+            chunk_lat = lats[i:end]
 
-    click.echo()
+            values = []
+            for j in range(end - i):
+                emb_list = chunk_emb[j].tolist()
+                values.append((i + j, emb_list, chunk_lon[j], chunk_lat[j]))
 
-    conn.execute("CREATE INDEX geom_spatial_idx ON geo_embeddings USING RTREE (geometry)")
+            conn.executemany(
+                "INSERT INTO geo_embeddings VALUES (?, ?::FLOAT[], ST_Point(?, ?))",
+                values,
+            )
+            click.echo(f"  Inserted {end:,}/{n:,}", nl=False)
+            click.echo("\r", nl=False)
 
-    elapsed = time.perf_counter() - start
-    click.echo(f"DuckDB created with {n:,} embeddings in {elapsed:.1f}s")
-    conn.close()
+        click.echo()
+
+        conn.execute("CREATE INDEX geom_spatial_idx ON geo_embeddings USING RTREE (geometry)")
+
+        elapsed = time.perf_counter() - start
+        click.echo(f"DuckDB created with {n:,} embeddings in {elapsed:.1f}s")
+    finally:
+        conn.close()
 
 
 def _create_faiss_index(index_path: Path, embeddings: np.ndarray):

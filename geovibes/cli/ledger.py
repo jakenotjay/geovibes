@@ -1,7 +1,9 @@
 """Persistent job/detection/comment ledger backed by parquet files."""
 
+import fcntl
 import json
 import warnings
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -56,6 +58,18 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+@contextmanager
+def _file_lock(project_dir: Path, name: str = "ledger"):
+    lock_path = project_dir / f".{name}.lock"
+    lock_file = open(lock_path, "w")
+    try:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(lock_file, fcntl.LOCK_UN)
+        lock_file.close()
+
+
 def _jobs_path(project_dir: Path) -> Path:
     return project_dir / JOBS_FILE
 
@@ -94,6 +108,11 @@ def create_job(
     parent_job_id: Optional[int] = None,
     reviewer: Optional[str] = None,
 ) -> int:
+    with _file_lock(project_dir, "jobs"):
+        return _create_job_locked(project_dir, job_type, iteration, config, parent_job_id, reviewer)
+
+
+def _create_job_locked(project_dir, job_type, iteration, config, parent_job_id, reviewer) -> int:
     jobs = load_jobs(project_dir)
     job_id = _next_id(jobs, "job_id")
 
@@ -127,6 +146,11 @@ def update_job(
     status: Optional[str] = None,
     summary: Optional[str] = None,
 ) -> None:
+    with _file_lock(project_dir, "jobs"):
+        _update_job_locked(project_dir, job_id, status, summary)
+
+
+def _update_job_locked(project_dir, job_id, status, summary):
     jobs = load_jobs(project_dir)
     mask = jobs["job_id"] == job_id
     if not mask.any():
@@ -168,6 +192,11 @@ def update_review(
     reviewer: str,
     review_job_id: Optional[int] = None,
 ) -> None:
+    with _file_lock(project_dir, "reviews"):
+        _update_review_locked(project_dir, detection_id, status, reviewer, review_job_id)
+
+
+def _update_review_locked(project_dir, detection_id, status, reviewer, review_job_id):
     reviews = load_reviews(project_dir)
     mask = reviews["detection_id"] == detection_id
     if not mask.any():
@@ -204,6 +233,11 @@ def add_comment(
     comment: str,
     job_id: Optional[int] = None,
 ) -> int:
+    with _file_lock(project_dir, "comments"):
+        return _add_comment_locked(project_dir, detection_id, reviewer, comment, job_id)
+
+
+def _add_comment_locked(project_dir, detection_id, reviewer, comment, job_id) -> int:
     comments = load_comments(project_dir)
     comment_id = _next_id(comments, "comment_id")
 

@@ -192,7 +192,7 @@ class SearchScreen(Screen):
                 except Exception:
                     pass
                 new_widget = TImage(img)
-                self.call_after_refresh(lambda: tile_panel.mount(new_widget))
+                self.call_after_refresh(lambda w=new_widget, p=tile_panel: p.mount(w))
             elif tile_bytes:
                 tile_panel.update(f"[green]Tile loaded[/] ({len(tile_bytes)} bytes)")
 
@@ -214,10 +214,7 @@ class SearchScreen(Screen):
         labeled_ids = set(self._pos_ids) | set(self._neg_ids)
         valid = [(d, int(i)) for d, i in zip(distances, ids) if i >= 0 and int(i) not in labeled_ids]
 
-        if self._sort_ascending:
-            valid.sort(key=lambda x: -x[0])
-        else:
-            valid.sort(key=lambda x: x[0])
+        valid.sort(key=lambda x: x[0])
 
         faiss_ids = [i for _, i in valid]
         meta_df = search_metadata(self._conn, faiss_ids)
@@ -230,9 +227,10 @@ class SearchScreen(Screen):
             for dist, fid in valid:
                 if fid in id_to_meta:
                     row = id_to_meta[fid]
+                    similarity = 1.0 / (1.0 + float(dist))
                     self._results.append({
                         "id": int(fid),
-                        "score": float(dist),
+                        "score": similarity,
                         "lat": float(row.get("lat", 0)),
                         "lon": float(row.get("lon", 0)),
                     })
@@ -279,10 +277,7 @@ class SearchScreen(Screen):
     def action_toggle_sort(self) -> None:
         self._sort_ascending = not self._sort_ascending
         if self._results:
-            if self._sort_ascending:
-                self._results.sort(key=lambda x: -x["score"])
-            else:
-                self._results.sort(key=lambda x: x["score"])
+            self._results.sort(key=lambda x: x["score"], reverse=not self._sort_ascending)
             self._selected = 0
         self._update_header()
         self._show_selected()

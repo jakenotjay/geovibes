@@ -121,9 +121,10 @@ class ReviewScreen(Screen):
         pos = self._index + 1
 
         score = det.get("score", 0)
-        score_class = "high" if score >= 0.8 else "medium" if score >= 0.5 else "low"
+        score_color = "green" if score >= 0.8 else "yellow" if score >= 0.5 else "red"
         status = det.get("status", "pending")
-        status_class = status
+        status_colors = {"pending": "yellow", "accepted": "green", "rejected": "red", "skipped": "dim"}
+        status_color = status_colors.get(status, "white")
 
         cluster_id = det.get("cluster_id")
         cluster_str = f"C-{int(cluster_id):03d}" if cluster_id is not None else "—"
@@ -144,11 +145,11 @@ class ReviewScreen(Screen):
             f"[bold]Detection #{pos}/{total}[/]\n"
             f"\n"
             f"[dim]ID:[/] {int(det['detection_id'])}\n"
-            f"[dim]Score:[/] [{score_class}]{score:.3f}[/]\n"
+            f"[dim]Score:[/] [{score_color}]{score:.3f}[/]\n"
             f"[dim]Cluster:[/] {cluster_str}\n"
             f"[dim]Lat:[/] {lat_str}\n"
             f"[dim]Lon:[/] {lon_str}\n"
-            f"[dim]Status:[/] [{status_class}]{status}[/]\n"
+            f"[dim]Status:[/] [{status_color}]{status}[/]\n"
             f"\n"
             f"[bold]Comments:[/]\n{comment_lines}"
         )
@@ -221,7 +222,7 @@ class ReviewScreen(Screen):
                 except Exception:
                     pass
                 new_widget = TImage(img)
-                self.call_after_refresh(lambda: tile_panel.mount(new_widget))
+                self.call_after_refresh(lambda w=new_widget, p=tile_panel: p.mount(w))
             elif tile_bytes:
                 tile_panel.update(f"[green]Tile loaded[/] ({len(tile_bytes)} bytes)")
             else:
