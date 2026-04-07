@@ -223,9 +223,14 @@ class ReviewScreen(Screen):
             )
             return
         sys.stderr = old_stderr
+
+        from PIL import Image as PILImage
+        from textual_image.renderable.halfcell import Image as HalfcellImage
+        img = PILImage.open(io.BytesIO(tile_bytes))
+        renderable = HalfcellImage(img, width=80, height=40)
         self.app.call_from_thread(
             self.query_one("#tile-panel", Static).update,
-            f"[green]Tile loaded[/] ({len(tile_bytes)} bytes)",
+            renderable,
         )
 
     def _apply_verdict(self, status: str) -> None:
