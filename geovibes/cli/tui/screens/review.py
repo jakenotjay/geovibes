@@ -138,6 +138,8 @@ class ReviewScreen(Screen):
 
     can_focus = True
 
+    SORT_MODES = ["confident", "cluster", "uncertain"]
+
     BINDINGS = [
         Binding("a", "accept", "Accept", priority=True),
         Binding("r", "reject", "Reject", priority=True),
@@ -148,6 +150,7 @@ class ReviewScreen(Screen):
         Binding("left", "prev_detection", "Prev", show=False, priority=True),
         Binding("p", "filter_pending", "Pending only", priority=True),
         Binding("o", "open_in_browser", "Open", priority=True),
+        Binding("m", "cycle_sort_mode", "Mode", priority=True),
     ]
 
     def __init__(self, **kwargs):
@@ -159,6 +162,7 @@ class ReviewScreen(Screen):
         self._undo_stack: List[dict] = []
         self._filter_pending = True
         self._reviewed_count = 0
+        self._sort_mode = "cluster"
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -183,9 +187,22 @@ class ReviewScreen(Screen):
             self._detection_ids = []
             return
 
-        df = self._reviews.sort_values("score", ascending=False)
+        df = self._reviews.copy()
         if self._filter_pending:
             df = df[df["status"] == "pending"]
+
+        if self._sort_mode == "cluster":
+            has_cluster = df["cluster_id"].notna() & (df["cluster_id"] >= 0)
+            clustered = df[has_cluster].sort_values("score", ascending=False)
+            reps = clustered.drop_duplicates(subset="cluster_id", keep="first")
+            noise = df[~has_cluster].sort_values("score", ascending=False)
+            df = pd.concat([reps, noise], ignore_index=True)
+            df = df.sort_values("score", ascending=False)
+        elif self._sort_mode == "uncertain":
+            df["uncertainty"] = (df["score"] - 0.5).abs()
+            df = df.sort_values("uncertainty", ascending=True)
+        else:
+            df = df.sort_values("score", ascending=False)
 
         self._detection_ids = df["detection_id"].tolist()
         self._index = 0
@@ -283,11 +300,13 @@ class ReviewScreen(Screen):
         bar = "█" * filled + "░" * (30 - filled)
 
         reviewed = self._reviewed_count
+        mode_label = {"confident": "Confident", "cluster": "Cluster rep", "uncertain": "Uncertain"}
         progress.update(
             f" {bar} {pos}/{total}  "
-            f"[green]Accepted: {self._count_status('accepted')}[/]  "
-            f"[red]Rejected: {self._count_status('rejected')}[/]  "
-            f"Session: {reviewed}"
+            f"[green]A:{self._count_status('accepted')}[/]  "
+            f"[red]R:{self._count_status('rejected')}[/]  "
+            f"Session: {reviewed}  "
+            f"[bold cyan]Mode: {mode_label[self._sort_mode]}[/] (m)"
         )
 
         self._fetch_tile(lat, lon)
@@ -443,6 +462,12 @@ class ReviewScreen(Screen):
 
     def action_filter_pending(self) -> None:
         self._filter_pending = not self._filter_pending
+        self._load_detections()
+        self._show_current()
+
+    def action_cycle_sort_mode(self) -> None:
+        idx = self.SORT_MODES.index(self._sort_mode)
+        self._sort_mode = self.SORT_MODES[(idx + 1) % len(self.SORT_MODES)]
         self._load_detections()
         self._show_current()
 
