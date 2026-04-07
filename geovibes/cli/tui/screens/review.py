@@ -193,8 +193,7 @@ class ReviewScreen(Screen):
             tile_panel.update("[dim]No coordinates[/]")
             return
 
-        tile_panel.update(f"[bold green]Tile[/] at {lat:.4f}, {lon:.4f}\n[dim]Press a/r/s to review, arrows to navigate[/]")
-        return  # skip tile fetch for now
+        tile_panel.update(f"[dim]Loading tile at {lat:.4f}, {lon:.4f}...[/]")
         self._run_tile_worker(lat, lon)
 
     def _run_tile_worker(self, lat: float, lon: float) -> None:
@@ -204,39 +203,34 @@ class ReviewScreen(Screen):
             exclusive=True,
         )
 
-    async def _fetch_tile_async(self, lat: float, lon: float) -> bytes:
+    async def _fetch_tile_async(self, lat: float, lon: float) -> Optional[bytes]:
         import warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            from geovibes.ui.xyz import get_map_image
-            return await asyncio.to_thread(
-                get_map_image,
-                source="GOOGLE_HYBRID",
-                lon=lon,
-                lat=lat,
-                zoom=16,
-            )
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                from geovibes.ui.xyz import get_map_image
+                return await asyncio.to_thread(
+                    get_map_image,
+                    source="GOOGLE_HYBRID",
+                    lon=lon,
+                    lat=lat,
+                    zoom=16,
+                )
+        except Exception:
+            return None
 
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
         if event.worker.name != "tile_fetch":
             return
+        tile_panel = self.query_one("#tile-panel", Static)
         if event.state == WorkerState.SUCCESS:
             tile_bytes = event.worker.result
-            tile_panel = self.query_one("#tile-panel", Static)
-            if HAS_IMAGE and tile_bytes:
-                from PIL import Image as PILImage
-
-                img = PILImage.open(BytesIO(tile_bytes))
-                tile_panel.remove_children()
-                new_widget = TImage(img)
-                self.call_after_refresh(lambda w=new_widget, p=tile_panel: p.mount(w))
-            elif tile_bytes:
+            if tile_bytes:
                 tile_panel.update(f"[green]Tile loaded[/] ({len(tile_bytes)} bytes)")
             else:
                 tile_panel.update("[red]Failed to load tile[/]")
         elif event.state == WorkerState.ERROR:
-            tile_panel = self.query_one("#tile-panel", Static)
-            tile_panel.update(f"[red]Tile error: {event.worker.error}[/]")
+            tile_panel.update("[red]Tile error[/]")
 
     def _apply_verdict(self, status: str) -> None:
         det = self._current_detection()
