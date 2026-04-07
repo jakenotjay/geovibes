@@ -1,5 +1,7 @@
 """GeoVibes CLI — interactive geospatial similarity search from the terminal."""
 
+from pathlib import Path
+
 import click
 
 from geovibes.cli.project import init_project, load_project, parse_bbox, parse_years
@@ -52,18 +54,37 @@ def load():
 @click.option("--threshold", default=0.5, type=float)
 def train(positives, negatives, classifier, threshold):
     """Train a classifier on labelled embeddings."""
+    from geovibes.cli.pipeline import run_train
+
     config = load_project()
-    click.echo(f"Training {classifier} for {config['name']}...")
-    click.echo("Not yet implemented")
+    project_dir = config["_project_dir"]
+
+    run_train(
+        project_dir=project_dir,
+        positives=[Path(p) for p in positives],
+        negatives=[Path(n) for n in negatives],
+        classifier_type=classifier,
+        threshold=threshold,
+    )
 
 
 @cli.command()
 @click.option("--threshold", default=0.5, type=float)
-def infer(threshold):
+@click.option("--model", default=None, type=click.Path(exists=True), help="Model path (default: latest)")
+@click.option("--batch-size", default=100_000, type=int)
+def infer(threshold, model, batch_size):
     """Run inference over all embeddings."""
+    from geovibes.cli.pipeline import run_infer
+
     config = load_project()
-    click.echo(f"Running inference for {config['name']}...")
-    click.echo("Not yet implemented")
+    project_dir = config["_project_dir"]
+
+    run_infer(
+        project_dir=project_dir,
+        model_path=Path(model) if model else None,
+        threshold=threshold,
+        batch_size=batch_size,
+    )
 
 
 @cli.command()
@@ -71,9 +92,16 @@ def infer(threshold):
 @click.option("--min-samples", default=2, type=int)
 def cluster(eps, min_samples):
     """Cluster detections with DBSCAN."""
+    from geovibes.cli.pipeline import run_cluster
+
     config = load_project()
-    click.echo(f"Clustering detections for {config['name']}...")
-    click.echo("Not yet implemented")
+    project_dir = config["_project_dir"]
+
+    run_cluster(
+        project_dir=project_dir,
+        eps_m=eps,
+        min_samples=min_samples,
+    )
 
 
 @cli.command()
