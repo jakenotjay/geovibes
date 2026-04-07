@@ -1,5 +1,6 @@
 """Search screen — FAISS similarity search + labelling."""
 
+import asyncio
 from io import BytesIO
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -175,7 +176,6 @@ class SearchScreen(Screen):
         )
 
     async def _fetch_tile_async(self, lat: float, lon: float) -> bytes:
-        import asyncio
         from geovibes.ui.xyz import get_map_image
         return await asyncio.to_thread(
             get_map_image, source="GOOGLE_HYBRID", lon=lon, lat=lat, zoom=16

@@ -1,5 +1,6 @@
 """Review screen — one-at-a-time detection review with satellite tile."""
 
+import asyncio
 from io import BytesIO
 from pathlib import Path
 from typing import List, Optional
@@ -206,7 +207,6 @@ class ReviewScreen(Screen):
         )
 
     async def _fetch_tile_async(self, lat: float, lon: float) -> bytes:
-        import asyncio
         from geovibes.ui.xyz import get_map_image
         return await asyncio.to_thread(
             get_map_image,

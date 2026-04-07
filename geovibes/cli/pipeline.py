@@ -301,9 +301,7 @@ def _load_label_file(path: Path) -> pd.DataFrame:
                 "geovibes_neg": 0, "negative": 0, "relabel_neg": 0,
                 "geovibes_sampled_neg": 0, "sampled": 0,
             }
-            df["label"] = df["class"].map(
-                lambda c: class_to_label.get(str(c).lower(), 0)
-            )
+            df["label"] = df["class"].str.lower().map(class_to_label).fillna(0).astype(int)
     else:
         raise ValueError(f"Unsupported label file format: {suffix}")
 
