@@ -182,15 +182,10 @@ class ReviewScreen(Screen):
 
     def on_mount(self) -> None:
         self._load_detections()
-        self._show_current(defer_tile=True)
+        self.call_after_refresh(self._mount_show)
 
-    def _deferred_tile_fetch(self) -> None:
-        """Fetch tile after a short delay so the screen's message loop is active."""
-        det = self._current_detection()
-        if det is None:
-            return
-        lat, lon = self._geometry_to_latlon(det.get("geometry"))
-        self._fetch_tile(lat, lon)
+    def _mount_show(self) -> None:
+        self._show_current()
 
     def on_unmount(self) -> None:
         self._finish_review_job()
@@ -258,7 +253,7 @@ class ReviewScreen(Screen):
             return None
         return row.iloc[0].to_dict()
 
-    def _show_current(self, defer_tile: bool = False) -> None:
+    def _show_current(self) -> None:
         det = self._current_detection()
         meta_panel = self.query_one("#meta-panel", Static)
         tile_panel = self.query_one("#tile-panel", Static)
@@ -335,10 +330,7 @@ class ReviewScreen(Screen):
             f"[bold cyan]Mode: {mode_label[self._sort_mode]}[/] (m)"
         )
 
-        if defer_tile:
-            self.set_timer(0.3, self._deferred_tile_fetch)
-        else:
-            self._fetch_tile(lat, lon)
+        self._fetch_tile(lat, lon)
 
     def _count_status(self, status: str) -> int:
         if self._reviews is None or self._reviews.empty:
