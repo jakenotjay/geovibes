@@ -39,4 +39,15 @@ class GeoVibesTUI(App):
         self.push_screen("queue")
 
     def action_switch_screen(self, screen_name: str) -> None:
+        self._finish_active_review()
         self.switch_screen(screen_name)
+
+    def action_quit(self) -> None:
+        self._finish_active_review()
+        self.exit()
+
+    def _finish_active_review(self) -> None:
+        """Finish any active review job before leaving the screen."""
+        from geovibes.cli.tui.screens.review import ReviewScreen
+        if isinstance(self.screen, ReviewScreen):
+            self.screen._finish_review_job()

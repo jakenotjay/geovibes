@@ -170,8 +170,10 @@ class ReviewScreen(Screen):
 
     def on_mount(self) -> None:
         self._load_detections()
-        self._start_review_job()
         self._show_current()
+
+    def on_unmount(self) -> None:
+        self._finish_review_job()
 
     def _load_detections(self) -> None:
         project_dir = self.app.project_dir
@@ -188,7 +190,10 @@ class ReviewScreen(Screen):
         self._detection_ids = df["detection_id"].tolist()
         self._index = 0
 
-    def _start_review_job(self) -> None:
+    def _ensure_review_job(self) -> None:
+        """Create the review job lazily on first actual review."""
+        if self._review_job_id is not None:
+            return
         if self._reviews is None or self._reviews.empty:
             return
         project_dir = self.app.project_dir
@@ -198,6 +203,17 @@ class ReviewScreen(Screen):
             job_type="review:human",
             iteration=iteration,
             reviewer="human",
+        )
+
+    def _finish_review_job(self) -> None:
+        """Mark the review job as done when leaving the screen."""
+        if self._review_job_id is None:
+            return
+        project_dir = self.app.project_dir
+        update_job(
+            project_dir, self._review_job_id,
+            status="done",
+            summary=f"{self._reviewed_count} reviewed",
         )
 
     def _current_detection(self) -> Optional[dict]:
@@ -335,6 +351,8 @@ class ReviewScreen(Screen):
         det = self._current_detection()
         if det is None:
             return
+
+        self._ensure_review_job()
 
         self._undo_stack.append({
             "detection_id": det["detection_id"],
