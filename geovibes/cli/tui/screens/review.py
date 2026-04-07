@@ -477,15 +477,12 @@ class ReviewScreen(Screen):
         self._reviews = load_reviews(project_dir)
         self._reviewed_count += 1
 
+        old_index = self._index
+        self._load_detections()
         if self._filter_pending:
-            self._detection_ids = (
-                self._reviews[self._reviews["status"] == "pending"]
-                .sort_values("score", ascending=False)["detection_id"]
-                .tolist()
-            )
-            self._index = min(self._index, max(0, len(self._detection_ids) - 1))
+            self._index = min(old_index, max(0, len(self._detection_ids) - 1))
         else:
-            self._advance()
+            self._index = min(old_index + 1, max(0, len(self._detection_ids) - 1))
 
         self._show_current()
 
@@ -516,13 +513,7 @@ class ReviewScreen(Screen):
         )
         self._reviews = load_reviews(project_dir)
         self._reviewed_count = max(0, self._reviewed_count - 1)
-
-        if self._filter_pending:
-            self._detection_ids = (
-                self._reviews[self._reviews["status"] == "pending"]
-                .sort_values("score", ascending=False)["detection_id"]
-                .tolist()
-            )
+        self._load_detections()
         self._index = min(entry["index"], max(0, len(self._detection_ids) - 1))
         self._show_current()
 
