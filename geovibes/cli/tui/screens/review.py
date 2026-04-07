@@ -370,10 +370,7 @@ class ReviewScreen(Screen):
         from PIL import Image as PILImage
         from textual_image.renderable.halfcell import Image as HalfcellImage
         img = PILImage.open(io.BytesIO(tile_bytes))
-        panel = self.query_one("#tile-panel", Static)
-        w = panel.size.width - 2 if panel.size.width > 10 else 80
-        h = panel.size.height - 2 if panel.size.height > 10 else 40
-        renderable = HalfcellImage(img, width=w, height=h)
+        renderable = HalfcellImage(img)
         self.post_message(TileReady(renderable))
 
     def on_tile_ready(self, event: TileReady) -> None:
