@@ -318,7 +318,7 @@ class ReviewScreen(Screen):
         if lat is None:
             return
         import webbrowser
-        webbrowser.open(f"https://www.google.com/maps/@{lat},{lon},18z/data=!3m1!1e1")
+        webbrowser.open(f"https://www.google.com/maps/@{lat},{lon},18z/data=!3m1!1e3")
 
     def action_filter_pending(self) -> None:
         self._filter_pending = not self._filter_pending
