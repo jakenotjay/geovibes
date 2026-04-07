@@ -213,7 +213,8 @@ class ReviewScreen(Screen):
         sys.stderr = io.StringIO()
         try:
             tile_bytes = _get_map_image(
-                source="GOOGLE_HYBRID", lon=lon, lat=lat, zoom=16,
+                source="GOOGLE_HYBRID", lon=lon, lat=lat, zoom=18,
+                tile_spec={"tile_size_px": 32, "meters_per_pixel": 10},
             )
         except Exception:
             sys.stderr = old_stderr
@@ -227,7 +228,10 @@ class ReviewScreen(Screen):
         from PIL import Image as PILImage
         from textual_image.renderable.halfcell import Image as HalfcellImage
         img = PILImage.open(io.BytesIO(tile_bytes))
-        renderable = HalfcellImage(img, width=80, height=40)
+        panel = self.query_one("#tile-panel", Static)
+        w = panel.size.width - 2 if panel.size.width > 10 else 80
+        h = panel.size.height - 2 if panel.size.height > 10 else 40
+        renderable = HalfcellImage(img, width=w, height=h)
         self.app.call_from_thread(
             self.query_one("#tile-panel", Static).update,
             renderable,
