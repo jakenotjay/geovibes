@@ -55,6 +55,7 @@ def run_train(
         point_ids = all_labels["id"].tolist()
         embeddings = _fetch_all_embeddings(conn, point_ids)
 
+        all_labels = all_labels.drop(columns=["embedding"], errors="ignore")
         all_labels = all_labels.merge(embeddings, on="id", how="inner")
         click.echo(f"Matched {len(all_labels)} embeddings from database")
 
