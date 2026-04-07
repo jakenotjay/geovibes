@@ -1,12 +1,11 @@
 """Persistent job/detection/comment ledger backed by parquet files."""
 
 import json
-import time
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -112,7 +111,9 @@ def create_job(
     if jobs.empty:
         jobs = new_df
     else:
-        jobs = pd.concat([jobs, new_df], ignore_index=True)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", FutureWarning)
+            jobs = pd.concat([jobs, new_df], ignore_index=True)
     _write_jobs(project_dir, jobs)
     return job_id
 
@@ -216,7 +217,9 @@ def add_comment(
     if comments.empty:
         comments = new_df
     else:
-        comments = pd.concat([comments, new_df], ignore_index=True)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", FutureWarning)
+            comments = pd.concat([comments, new_df], ignore_index=True)
     table = pa.Table.from_pandas(comments, schema=COMMENTS_SCHEMA, preserve_index=False)
     pq.write_table(table, _comments_path(project_dir))
     return comment_id

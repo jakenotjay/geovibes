@@ -1,0 +1,92 @@
+Screen {
+    background: $surface;
+}
+
+/* Queue screen */
+#queue-header {
+    dock: top;
+    height: 3;
+    padding: 0 1;
+    background: $primary-background;
+    color: $text;
+}
+
+#queue-header .stats {
+    text-style: bold;
+}
+
+#jobs-table {
+    height: 1fr;
+}
+
+DataTable > .datatable--cursor {
+    background: $accent;
+    color: $text;
+}
+
+/* Review screen */
+#review-container {
+    layout: horizontal;
+}
+
+#tile-panel {
+    width: 1fr;
+    min-width: 40;
+    height: 1fr;
+    border: solid $primary;
+    content-align: center middle;
+}
+
+#meta-panel {
+    width: 40;
+    height: 1fr;
+    padding: 1 2;
+    border: solid $secondary;
+}
+
+#meta-panel .label {
+    color: $text-muted;
+    text-style: bold;
+}
+
+#meta-panel .value {
+    margin-bottom: 1;
+}
+
+#review-footer {
+    dock: bottom;
+    height: 3;
+    padding: 0 1;
+    background: $primary-background;
+}
+
+#progress-bar {
+    dock: bottom;
+    height: 1;
+    padding: 0 1;
+}
+
+.status-pending {
+    color: $warning;
+}
+
+.status-accepted {
+    color: $success;
+}
+
+.status-rejected {
+    color: $error;
+}
+
+.score-high {
+    color: $success;
+    text-style: bold;
+}
+
+.score-medium {
+    color: $warning;
+}
+
+.score-low {
+    color: $error;
+}
