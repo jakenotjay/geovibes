@@ -1,7 +1,5 @@
 """Review screen — one-at-a-time detection review with satellite tile."""
 
-import asyncio
-from io import BytesIO
 from pathlib import Path
 from typing import List, Optional
 
@@ -11,8 +9,8 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
+from textual import work
 from textual.widgets import Footer, Header, Static
-from textual.worker import Worker, WorkerState
 
 from geovibes.cli.ledger import (
     add_comment,
@@ -44,6 +42,7 @@ class ReviewScreen(Screen):
         Binding("right", "next_detection", "Next", show=False, priority=True),
         Binding("left", "prev_detection", "Prev", show=False, priority=True),
         Binding("p", "filter_pending", "Pending only", priority=True),
+        Binding("o", "open_in_browser", "Open", priority=True),
     ]
 
     def __init__(self, **kwargs):
@@ -193,43 +192,29 @@ class ReviewScreen(Screen):
             tile_panel.update("[dim]No coordinates[/]")
             return
 
-        tile_panel.update(f"[bold]Tile[/] at {lat:.4f}, {lon:.4f}")
+        tile_panel.update(f"[dim]Loading tile at {lat:.4f}, {lon:.4f}...[/]")
+        self._fetch_and_render_tile(lat, lon)
 
-    def _run_tile_worker(self, lat: float, lon: float) -> None:
-        self.run_worker(
-            self._fetch_tile_async(lat, lon),
-            name="tile_fetch",
-            exclusive=True,
-        )
-
-    async def _fetch_tile_async(self, lat: float, lon: float) -> Optional[bytes]:
+    @work(thread=True, exclusive=True, name="tile_fetch")
+    def _fetch_and_render_tile(self, lat: float, lon: float) -> None:
         import warnings
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                from geovibes.ui.xyz import get_map_image
-                return await asyncio.to_thread(
-                    get_map_image,
-                    source="GOOGLE_HYBRID",
-                    lon=lon,
-                    lat=lat,
-                    zoom=16,
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            from geovibes.ui.xyz import get_map_image
+            try:
+                tile_bytes = get_map_image(
+                    source="GOOGLE_HYBRID", lon=lon, lat=lat, zoom=16,
                 )
-        except Exception:
-            return None
-
-    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
-        if event.worker.name != "tile_fetch":
-            return
-        tile_panel = self.query_one("#tile-panel", Static)
-        if event.state == WorkerState.SUCCESS:
-            tile_bytes = event.worker.result
-            if tile_bytes:
-                tile_panel.update(f"[green]Tile loaded[/] ({len(tile_bytes)} bytes)")
-            else:
-                tile_panel.update("[red]Failed to load tile[/]")
-        elif event.state == WorkerState.ERROR:
-            tile_panel.update("[red]Tile error[/]")
+            except Exception:
+                self.app.call_from_thread(
+                    self.query_one("#tile-panel", Static).update,
+                    "[red]Failed to load tile[/]",
+                )
+                return
+        self.app.call_from_thread(
+            self.query_one("#tile-panel", Static).update,
+            f"[green]Tile loaded[/] ({len(tile_bytes)} bytes)",
+        )
 
     def _apply_verdict(self, status: str) -> None:
         det = self._current_detection()
@@ -312,6 +297,16 @@ class ReviewScreen(Screen):
         if self._index > 0:
             self._index -= 1
             self._show_current()
+
+    def action_open_in_browser(self) -> None:
+        det = self._current_detection()
+        if det is None:
+            return
+        lat, lon = self._geometry_to_latlon(det.get("geometry"))
+        if lat is None:
+            return
+        import webbrowser
+        webbrowser.open(f"https://www.google.com/maps/@{lat},{lon},18z/data=!3m1!1e1")
 
     def action_filter_pending(self) -> None:
         self._filter_pending = not self._filter_pending
