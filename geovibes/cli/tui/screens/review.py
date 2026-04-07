@@ -362,9 +362,17 @@ class ReviewScreen(Screen):
             return
 
         tile_panel.update(f"[dim]Loading tile at {lat:.4f}, {lon:.4f}...[/]")
+        self._pending_tile = None
         import threading
         t = threading.Thread(target=self._fetch_and_render_tile, args=(lat, lon), daemon=True)
         t.start()
+        self._tile_poll_timer = self.set_interval(0.2, self._check_tile_ready)
+
+    def _check_tile_ready(self) -> None:
+        if self._pending_tile is not None:
+            self._tile_poll_timer.stop()
+            self.query_one("#tile-panel", Static).update(self._pending_tile)
+            self._pending_tile = None
 
     def _fetch_and_render_tile(self, lat: float, lon: float) -> None:
         old_stderr = sys.stderr
@@ -373,7 +381,7 @@ class ReviewScreen(Screen):
             tile_bytes = _fetch_tile_grid(lat, lon, zoom=18, grid=3)
         except Exception:
             sys.stderr = old_stderr
-            self.post_message(TileReady("[red]Failed to load tile[/]"))
+            self._pending_tile = "[red]Failed to load tile[/]"
             return
         sys.stderr = old_stderr
 
@@ -384,11 +392,10 @@ class ReviewScreen(Screen):
         h = min(panel.size.height - 2, len(_NUMBER_TO_DIACRITIC)) if panel.size.height > 10 else 40
         try:
             image_id = _transmit_image(img, w, h)
-            renderable = TilePlaceholder(image_id, w, h)
+            self._pending_tile = TilePlaceholder(image_id, w, h)
         except Exception:
             from textual_image.renderable.halfcell import Image as HalfcellImage
-            renderable = HalfcellImage(img, width=w, height=h)
-        self.post_message(TileReady(renderable))
+            self._pending_tile = HalfcellImage(img, width=w, height=h)
 
     def on_tile_ready(self, event: TileReady) -> None:
         self.query_one("#tile-panel", Static).update(event.content)
