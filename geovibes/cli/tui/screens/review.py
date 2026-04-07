@@ -132,6 +132,15 @@ class TilePlaceholder:
 GOOGLE_HYBRID_TEMPLATE = "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
 
 
+from textual.message import Message
+
+
+class TileReady(Message):
+    def __init__(self, content) -> None:
+        super().__init__()
+        self.content = content
+
+
 class ReviewScreen(Screen):
     """One-at-a-time detection review with satellite imagery."""
 
@@ -354,7 +363,7 @@ class ReviewScreen(Screen):
             tile_bytes = _fetch_tile_grid(lat, lon, zoom=18, grid=3)
         except Exception:
             sys.stderr = old_stderr
-            self.app.call_from_thread(self._update_tile, "[red]Failed to load tile[/]")
+            self.post_message(TileReady("[red]Failed to load tile[/]"))
             return
         sys.stderr = old_stderr
 
@@ -369,10 +378,10 @@ class ReviewScreen(Screen):
         except Exception:
             from textual_image.renderable.halfcell import Image as HalfcellImage
             renderable = HalfcellImage(img, width=w, height=h)
-        self.app.call_from_thread(self._update_tile, renderable)
+        self.post_message(TileReady(renderable))
 
-    def _update_tile(self, content) -> None:
-        self.query_one("#tile-panel", Static).update(content)
+    def on_tile_ready(self, event: TileReady) -> None:
+        self.query_one("#tile-panel", Static).update(event.content)
 
     def _apply_verdict(self, status: str) -> None:
         det = self._current_detection()
