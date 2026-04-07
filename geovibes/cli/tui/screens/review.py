@@ -51,6 +51,10 @@ from textual_image.renderable.tgp import (
 _tgp_id_counter = count(randint(1, 2**32))
 
 
+import threading
+_tgp_lock = threading.Lock()
+
+
 def _fetch_tile_grid(lat: float, lon: float, zoom: int = 18, grid: int = 3) -> bytes:
     """Fetch a grid x grid mosaic of tiles centered on lat/lon, return as PNG bytes."""
     from geovibes.ui.xyz import deg2num, _fetch_tile_bytes, _xyz_sources
@@ -93,14 +97,15 @@ def _transmit_image(pil_image, cell_width, cell_height):
     pil_image.save(buf, format="PNG")
     image_data = base64.standard_b64encode(buf.getvalue()).decode("ascii")
 
-    first = True
-    while image_data:
-        chunk, image_data = image_data[:4096], image_data[4096:]
-        kwargs = {"m": 1 if image_data else 0, "q": 2, "payload": chunk}
-        if first:
-            kwargs.update(a="T", i=image_id, f=100, U=1, c=cell_width, r=cell_height)
-            first = False
-        _send_tgp_to_tty(**kwargs)
+    with _tgp_lock:
+        first = True
+        while image_data:
+            chunk, image_data = image_data[:4096], image_data[4096:]
+            kwargs = {"m": 1 if image_data else 0, "q": 2, "payload": chunk}
+            if first:
+                kwargs.update(a="T", i=image_id, f=100, U=1, c=cell_width, r=cell_height)
+                first = False
+            _send_tgp_to_tty(**kwargs)
 
     return image_id
 
@@ -386,7 +391,6 @@ class ReviewScreen(Screen):
             self._tile_poll_timer.stop()
         self._pending_tile = None
         self._pending_det_id = det_id
-        import threading
         threading.Thread(target=self._bg_fetch_tile, args=(det_id, lat, lon), daemon=True).start()
         self._tile_poll_timer = self.set_interval(0.1, self._check_tile_ready)
 
