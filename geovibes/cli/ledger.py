@@ -162,6 +162,17 @@ def update_job(
         _update_job_locked(project_dir, job_id, status, summary)
 
 
+@contextmanager
+def track_job(project_dir: Path, job_id: int):
+    """Context manager that marks a job as failed on unhandled exception."""
+    try:
+        yield job_id
+    except BaseException as exc:
+        msg = str(exc)[:200] if str(exc) else type(exc).__name__
+        update_job(project_dir, job_id, status="failed", summary=msg)
+        raise
+
+
 def _update_job_locked(project_dir, job_id, status, summary):
     jobs = load_jobs(project_dir)
     mask = jobs["job_id"] == job_id
