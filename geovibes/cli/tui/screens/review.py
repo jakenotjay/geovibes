@@ -42,9 +42,6 @@ from rich.measure import Measurement
 from rich.segment import Segment
 from rich.style import Style
 
-from textual_image._geometry import ImageSize
-from textual_image._pixeldata import PixelData
-from textual_image._terminal import get_cell_size
 from textual_image.renderable.tgp import (
     _NUMBER_TO_DIACRITIC,
     _PLACEHOLDER,
@@ -53,6 +50,25 @@ from textual_image.renderable.tgp import (
 )
 
 _tgp_id_counter = count(randint(1, 2**32))
+
+
+def _fetch_tile_grid(lat: float, lon: float, zoom: int = 18, grid: int = 3) -> bytes:
+    """Fetch a grid x grid mosaic of tiles centered on lat/lon, return as PNG bytes."""
+    from geovibes.ui.xyz import deg2num, _fetch_tile_bytes, _xyz_sources
+    from PIL import Image as PILImage
+
+    template = _xyz_sources()["GOOGLE_HYBRID"]
+    cx, cy = deg2num(lat, lon, zoom)
+    half = grid // 2
+    mosaic = PILImage.new("RGB", (grid * 256, grid * 256))
+    for dy in range(-half, half + 1):
+        for dx in range(-half, half + 1):
+            tile_bytes = _fetch_tile_bytes("GOOGLE_HYBRID", template, zoom, cx + dx, cy + dy)
+            tile_img = PILImage.open(io.BytesIO(tile_bytes))
+            mosaic.paste(tile_img, ((dx + half) * 256, (dy + half) * 256))
+    buf = io.BytesIO()
+    mosaic.save(buf, format="PNG")
+    return buf.getvalue()
 
 
 def _send_tgp_to_tty(*, payload: str | None = None, **kwargs: int | str | None) -> None:
@@ -70,22 +86,23 @@ def _send_tgp_to_tty(*, payload: str | None = None, **kwargs: int | str | None) 
 
 
 def _transmit_image(pil_image, cell_width, cell_height):
-    """Transmit image to terminal via /dev/tty, return image_id."""
+    """Transmit image to terminal via /dev/tty as PNG, return image_id."""
+    import base64
     image_id = next(_tgp_id_counter)
-    terminal_sizes = get_cell_size()
-    pixel_w = cell_width * terminal_sizes.cell_width
-    pixel_h = cell_height * terminal_sizes.cell_height
 
-    pixel_data = PixelData(pil_image)
-    image_data = pixel_data.scaled(pixel_w, pixel_h).to_base64()
+    buf = io.BytesIO()
+    pil_image.save(buf, format="PNG")
+    image_data = base64.standard_b64encode(buf.getvalue()).decode("ascii")
 
+    first = True
     while image_data:
         chunk, image_data = image_data[:4096], image_data[4096:]
-        _send_tgp_to_tty(
-            i=image_id, m=1 if image_data else 0, f=100, payload=chunk, q=2,
-        )
+        kwargs = {"m": 1 if image_data else 0, "q": 2, "payload": chunk}
+        if first:
+            kwargs.update(a="T", i=image_id, f=100, U=1, c=cell_width, r=cell_height)
+            first = False
+        _send_tgp_to_tty(**kwargs)
 
-    _send_tgp_to_tty(a="p", i=image_id, c=cell_width, r=cell_height, U=1, q=2)
     return image_id
 
 
@@ -288,10 +305,7 @@ class ReviewScreen(Screen):
         old_stderr = sys.stderr
         sys.stderr = io.StringIO()
         try:
-            tile_bytes = _get_map_image(
-                source="GOOGLE_HYBRID", lon=lon, lat=lat, zoom=18,
-                tile_spec={"tile_size_px": 32, "meters_per_pixel": 10},
-            )
+            tile_bytes = _fetch_tile_grid(lat, lon, zoom=18, grid=3)
         except Exception:
             sys.stderr = old_stderr
             self.app.call_from_thread(
