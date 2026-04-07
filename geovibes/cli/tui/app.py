@@ -18,9 +18,9 @@ class GeoVibesTUI(App):
 
     BINDINGS = [
         Binding("q", "quit", "Quit", priority=True),
-        Binding("1", "switch_screen('queue')", "Queue", show=True),
+        Binding("1", "switch_screen('queue')", "Jobs", show=True),
         Binding("2", "switch_screen('review')", "Review", show=True),
-        Binding("3", "switch_screen('search')", "Search", show=True),
+        Binding("3", "switch_screen('search')", "Similarity search", show=True),
     ]
 
     SCREENS = {
