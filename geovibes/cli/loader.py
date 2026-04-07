@@ -159,6 +159,8 @@ def _create_faiss_index(index_path: Path, embeddings: np.ndarray):
     start = time.perf_counter()
 
     n, dim = embeddings.shape
+    if dim < 1:
+        raise ValueError(f"Invalid embedding dimension: {dim}")
 
     if n < 10_000:
         click.echo("  Using flat index (small dataset)")

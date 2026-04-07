@@ -1,7 +1,6 @@
 """Persistent job/detection/comment ledger backed by parquet files."""
 
 import json
-import os
 import warnings
 from contextlib import contextmanager
 
@@ -67,6 +66,10 @@ def _now() -> datetime:
 @contextmanager
 def _file_lock(project_dir: Path, name: str = "ledger"):
     if not _HAS_FCNTL:
+        warnings.warn(
+            "File locking unavailable on this platform; concurrent writes are not protected",
+            stacklevel=2,
+        )
         yield
         return
     lock_path = project_dir / f".{name}.lock"
