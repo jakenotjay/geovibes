@@ -166,7 +166,7 @@ def _create_faiss_index(index_path: Path, embeddings: np.ndarray):
         index.add(embeddings)
     else:
         nlist = min(4096, n // 100)
-        m = min(64, dim)
+        m = max(d for d in range(1, min(65, dim + 1)) if dim % d == 0)
         nbits = 8
 
         click.echo(f"  Training IVF-PQ: nlist={nlist}, m={m}, nbits={nbits}")

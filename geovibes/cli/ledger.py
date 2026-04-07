@@ -1,9 +1,15 @@
 """Persistent job/detection/comment ledger backed by parquet files."""
 
-import fcntl
 import json
+import os
 import warnings
 from contextlib import contextmanager
+
+try:
+    import fcntl
+    _HAS_FCNTL = True
+except ImportError:
+    _HAS_FCNTL = False
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -60,6 +66,9 @@ def _now() -> datetime:
 
 @contextmanager
 def _file_lock(project_dir: Path, name: str = "ledger"):
+    if not _HAS_FCNTL:
+        yield
+        return
     lock_path = project_dir / f".{name}.lock"
     lock_file = open(lock_path, "w")
     try:
@@ -180,9 +189,14 @@ def load_reviews(project_dir: Path) -> pd.DataFrame:
     return pd.read_parquet(path)
 
 
-def save_reviews(project_dir: Path, df: pd.DataFrame) -> None:
+def _write_reviews(project_dir: Path, df: pd.DataFrame) -> None:
     table = pa.Table.from_pandas(df, schema=REVIEWS_SCHEMA, preserve_index=False)
     pq.write_table(table, _reviews_path(project_dir))
+
+
+def save_reviews(project_dir: Path, df: pd.DataFrame) -> None:
+    with _file_lock(project_dir, "reviews"):
+        _write_reviews(project_dir, df)
 
 
 def update_review(
@@ -208,7 +222,7 @@ def _update_review_locked(project_dir, detection_id, status, reviewer, review_jo
     if review_job_id is not None:
         reviews.loc[mask, "review_job_id"] = review_job_id
 
-    save_reviews(project_dir, reviews)
+    _write_reviews(project_dir, reviews)
 
 
 # --- Comments ---
