@@ -1,5 +1,9 @@
 """Review screen — one-at-a-time detection review with satellite tile."""
 
+import io
+import os
+import sys
+import warnings
 from pathlib import Path
 from typing import List, Optional
 
@@ -11,6 +15,14 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual import work
 from textual.widgets import Footer, Header, Static
+
+# Import tile fetcher at module level to avoid triggering warnings inside threads
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    _stderr = sys.stderr
+    sys.stderr = io.StringIO()
+    from geovibes.ui.xyz import get_map_image as _get_map_image
+    sys.stderr = _stderr
 
 from geovibes.cli.ledger import (
     add_comment,
@@ -197,20 +209,20 @@ class ReviewScreen(Screen):
 
     @work(thread=True, exclusive=True, name="tile_fetch")
     def _fetch_and_render_tile(self, lat: float, lon: float) -> None:
-        import warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            from geovibes.ui.xyz import get_map_image
-            try:
-                tile_bytes = get_map_image(
-                    source="GOOGLE_HYBRID", lon=lon, lat=lat, zoom=16,
-                )
-            except Exception:
-                self.app.call_from_thread(
-                    self.query_one("#tile-panel", Static).update,
-                    "[red]Failed to load tile[/]",
-                )
-                return
+        old_stderr = sys.stderr
+        sys.stderr = io.StringIO()
+        try:
+            tile_bytes = _get_map_image(
+                source="GOOGLE_HYBRID", lon=lon, lat=lat, zoom=16,
+            )
+        except Exception:
+            sys.stderr = old_stderr
+            self.app.call_from_thread(
+                self.query_one("#tile-panel", Static).update,
+                "[red]Failed to load tile[/]",
+            )
+            return
+        sys.stderr = old_stderr
         self.app.call_from_thread(
             self.query_one("#tile-panel", Static).update,
             f"[green]Tile loaded[/] ({len(tile_bytes)} bytes)",
