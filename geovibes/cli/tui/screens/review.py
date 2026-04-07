@@ -202,14 +202,17 @@ class ReviewScreen(Screen):
         )
 
     async def _fetch_tile_async(self, lat: float, lon: float) -> bytes:
-        from geovibes.ui.xyz import get_map_image
-        return await asyncio.to_thread(
-            get_map_image,
-            source="GOOGLE_HYBRID",
-            lon=lon,
-            lat=lat,
-            zoom=16,
-        )
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            from geovibes.ui.xyz import get_map_image
+            return await asyncio.to_thread(
+                get_map_image,
+                source="GOOGLE_HYBRID",
+                lon=lon,
+                lat=lat,
+                zoom=16,
+            )
 
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
         if event.worker.name != "tile_fetch":
