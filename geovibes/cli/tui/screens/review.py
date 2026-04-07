@@ -368,16 +368,12 @@ class ReviewScreen(Screen):
         sys.stderr = old_stderr
 
         from PIL import Image as PILImage
+        from textual_image.renderable.halfcell import Image as HalfcellImage
         img = PILImage.open(io.BytesIO(tile_bytes))
         panel = self.query_one("#tile-panel", Static)
-        w = min(panel.size.width - 2, len(_NUMBER_TO_DIACRITIC)) if panel.size.width > 10 else 80
-        h = min(panel.size.height - 2, len(_NUMBER_TO_DIACRITIC)) if panel.size.height > 10 else 40
-        try:
-            image_id = _transmit_image(img, w, h)
-            renderable = TilePlaceholder(image_id, w, h)
-        except Exception:
-            from textual_image.renderable.halfcell import Image as HalfcellImage
-            renderable = HalfcellImage(img, width=w, height=h)
+        w = panel.size.width - 2 if panel.size.width > 10 else 80
+        h = panel.size.height - 2 if panel.size.height > 10 else 40
+        renderable = HalfcellImage(img, width=w, height=h)
         self.post_message(TileReady(renderable))
 
     def on_tile_ready(self, event: TileReady) -> None:
