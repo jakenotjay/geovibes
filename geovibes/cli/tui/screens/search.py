@@ -187,11 +187,7 @@ class SearchScreen(Screen):
             if HAS_IMAGE and tile_bytes:
                 from PIL import Image as PILImage
                 img = PILImage.open(BytesIO(tile_bytes))
-                from textual.css.query import NoMatches
-                try:
-                    tile_panel.remove_children()
-                except NoMatches:
-                    pass
+                tile_panel.remove_children()
                 new_widget = TImage(img)
                 self.call_after_refresh(lambda w=new_widget, p=tile_panel: p.mount(w))
             elif tile_bytes:

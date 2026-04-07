@@ -129,7 +129,12 @@ class ReviewScreen(Screen):
         status_color = status_colors.get(status, "white")
 
         cluster_id = det.get("cluster_id")
-        cluster_str = f"C-{int(cluster_id):03d}" if pd.notna(cluster_id) else "—"
+        if pd.notna(cluster_id) and int(cluster_id) >= 0:
+            cluster_str = f"C-{int(cluster_id):03d}"
+        elif pd.notna(cluster_id) and int(cluster_id) == -1:
+            cluster_str = "noise"
+        else:
+            cluster_str = "—"
 
         lat, lon = self._geometry_to_latlon(det.get("geometry"))
         lat_str = f"{lat:.4f}" if lat else "—"
@@ -219,11 +224,7 @@ class ReviewScreen(Screen):
                 from PIL import Image as PILImage
 
                 img = PILImage.open(BytesIO(tile_bytes))
-                from textual.css.query import NoMatches
-                try:
-                    tile_panel.remove_children()
-                except NoMatches:
-                    pass
+                tile_panel.remove_children()
                 new_widget = TImage(img)
                 self.call_after_refresh(lambda w=new_widget, p=tile_panel: p.mount(w))
             elif tile_bytes:
