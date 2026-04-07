@@ -90,3 +90,38 @@ DataTable > .datatable--cursor {
 .score-low {
     color: $error;
 }
+
+/* Search screen */
+#search-header {
+    dock: top;
+    height: 3;
+    padding: 0 1;
+    background: $primary-background;
+    color: $text;
+}
+
+#search-container {
+    layout: horizontal;
+    height: 1fr;
+}
+
+#search-tile {
+    width: 1fr;
+    min-width: 40;
+    height: 1fr;
+    border: solid $primary;
+    content-align: center middle;
+}
+
+#search-meta {
+    width: 35;
+    height: 1fr;
+    padding: 1 2;
+    border: solid $secondary;
+}
+
+#search-results-bar {
+    dock: bottom;
+    height: 2;
+    padding: 0 1;
+}

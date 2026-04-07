@@ -7,6 +7,7 @@ from textual.binding import Binding
 
 from geovibes.cli.tui.screens.queue import QueueScreen
 from geovibes.cli.tui.screens.review import ReviewScreen
+from geovibes.cli.tui.screens.search import SearchScreen
 
 
 class GeoVibesTUI(App):
@@ -19,11 +20,13 @@ class GeoVibesTUI(App):
         Binding("q", "quit", "Quit", priority=True),
         Binding("1", "switch_screen('queue')", "Queue", show=True),
         Binding("2", "switch_screen('review')", "Review", show=True),
+        Binding("3", "switch_screen('search')", "Search", show=True),
     ]
 
     SCREENS = {
         "queue": QueueScreen,
         "review": ReviewScreen,
+        "search": SearchScreen,
     }
 
     def __init__(self, config: Dict, **kwargs):
