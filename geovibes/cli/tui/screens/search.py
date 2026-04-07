@@ -8,7 +8,7 @@ import numpy as np
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical, ScrollableContainer
+from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Footer, Header, Static
 from textual.worker import Worker, WorkerState
@@ -313,7 +313,6 @@ class SearchScreen(Screen):
         all_ids = list(self._pos_ids) + list(self._neg_ids)
         geom_lookup = {}
         if self._conn and all_ids:
-            from geovibes.cli.search import fetch_embeddings as _fetch
             geo_df = self._conn.execute(
                 f"SELECT id, ST_AsBinary(geometry) as geometry FROM geo_embeddings WHERE id IN ({','.join(['?' for _ in all_ids])})",
                 all_ids,

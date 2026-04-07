@@ -265,7 +265,7 @@ def run_cluster(
     db = DBSCAN(eps=eps_rad, min_samples=min_samples, metric="haversine")
     cluster_labels = db.fit_predict(coords_rad)
 
-    valid_reviews["cluster_id"] = cluster_labels
+    reviews["cluster_id"] = -1
     reviews.loc[valid_mask, "cluster_id"] = cluster_labels
     n_clusters = len(set(cluster_labels)) - (1 if -1 in cluster_labels else 0)
     n_noise = int((cluster_labels == -1).sum())
