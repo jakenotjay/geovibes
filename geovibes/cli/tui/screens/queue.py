@@ -12,10 +12,11 @@ from geovibes.cli.ledger import load_jobs, load_reviews
 
 
 def _format_elapsed(started_at, finished_at) -> str:
-    if started_at is None:
+    if started_at is None or (hasattr(started_at, "isnull") and started_at.isnull()):
         return ""
+    import pandas as pd
     start = started_at
-    end = finished_at if finished_at is not None else datetime.now(timezone.utc)
+    end = finished_at if finished_at is not None and not pd.isna(finished_at) else datetime.now(timezone.utc)
     if hasattr(start, "to_pydatetime"):
         start = start.to_pydatetime()
     if hasattr(end, "to_pydatetime"):

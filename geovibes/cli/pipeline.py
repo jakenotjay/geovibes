@@ -159,7 +159,7 @@ def run_infer(
             batch = conn.execute(
                 """
                 SELECT id, CAST(embedding AS FLOAT[]) as embedding,
-                       ST_AsBinary(geometry) as geometry
+                       ST_AsWKB(geometry) as geometry
                 FROM geo_embeddings
                 ORDER BY id
                 LIMIT ? OFFSET ?
