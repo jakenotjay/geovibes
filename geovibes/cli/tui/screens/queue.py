@@ -64,6 +64,10 @@ class QueueScreen(Screen):
         table.zebra_stripes = True
         table.add_columns("Job", "Type", "Iter", "Status", "Elapsed", "Summary")
         self._load_data()
+        self._refresh_timer = self.set_interval(5, self._load_data)
+
+    def on_unmount(self) -> None:
+        self._refresh_timer.stop()
 
     def _load_data(self) -> None:
         project_dir = self.app.project_dir
