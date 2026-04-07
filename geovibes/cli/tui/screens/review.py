@@ -371,12 +371,19 @@ class ReviewScreen(Screen):
         t.start()
         self._tile_poll_timer = self.set_interval(0.2, self._check_tile_ready)
 
+    _trace_log = "/tmp/tui_tile_trace.log"
+
+    def _trace(self, msg: str) -> None:
+        import time
+        with open(self._trace_log, "a") as f:
+            f.write(f"{time.time():.3f} {msg}\n")
+
     def _check_tile_ready(self) -> None:
+        self._trace(f"poll pending={self._pending_tile is not None}")
         if self._pending_tile is not None:
             self._tile_poll_timer.stop()
             self.query_one("#tile-panel", Static).update(self._pending_tile)
             self._pending_tile = None
-            self.refresh()
 
     def _fetch_and_render_tile(self, lat: float, lon: float) -> None:
         old_stderr = sys.stderr
