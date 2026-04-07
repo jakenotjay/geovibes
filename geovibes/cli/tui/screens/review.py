@@ -161,6 +161,8 @@ class ReviewScreen(Screen):
         Binding("m", "cycle_sort_mode", "Mode", priority=True),
     ]
 
+    PREFETCH_AHEAD = 3
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._index = 0
@@ -171,6 +173,8 @@ class ReviewScreen(Screen):
         self._filter_pending = True
         self._reviewed_count = 0
         self._sort_mode = "cluster"
+        self._tile_cache: dict = {}
+        self._prefetching: set = set()
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -195,11 +199,12 @@ class ReviewScreen(Screen):
         lat, lon = self._geometry_to_latlon(det.get("geometry"))
         if lat is None:
             return
-        self._pending_tile = None
-        self._do_fetch_tile(lat, lon)
-        if self._pending_tile is not None:
-            self.query_one("#tile-panel", Static).update(self._pending_tile)
-            self._pending_tile = None
+        det_id = det["detection_id"]
+        renderable = self._render_tile(lat, lon)
+        if renderable is not None:
+            self._tile_cache[det_id] = renderable
+            self.query_one("#tile-panel", Static).update(renderable)
+        self._prefetch_upcoming()
 
     def on_unmount(self) -> None:
         self._finish_review_job()
@@ -368,32 +373,73 @@ class ReviewScreen(Screen):
             tile_panel.update("[dim]No coordinates[/]")
             return
 
+        det = self._current_detection()
+        det_id = det["detection_id"] if det else None
+
+        if det_id in self._tile_cache:
+            tile_panel.update(self._tile_cache[det_id])
+            self._prefetch_upcoming()
+            return
+
         tile_panel.update(f"[dim]Loading...[/]")
         if hasattr(self, "_tile_poll_timer"):
             self._tile_poll_timer.stop()
         self._pending_tile = None
+        self._pending_det_id = det_id
         import threading
-        threading.Thread(target=self._bg_fetch_tile, args=(lat, lon), daemon=True).start()
+        threading.Thread(target=self._bg_fetch_tile, args=(det_id, lat, lon), daemon=True).start()
         self._tile_poll_timer = self.set_interval(0.1, self._check_tile_ready)
 
     def _check_tile_ready(self) -> None:
         if self._pending_tile is not None:
             self._tile_poll_timer.stop()
             self.query_one("#tile-panel", Static).update(self._pending_tile)
+            if self._pending_det_id is not None:
+                self._tile_cache[self._pending_det_id] = self._pending_tile
             self._pending_tile = None
+            self._prefetch_upcoming()
 
-    def _bg_fetch_tile(self, lat: float, lon: float) -> None:
-        self._do_fetch_tile(lat, lon)
+    def _prefetch_upcoming(self) -> None:
+        import threading
+        for offset in range(1, self.PREFETCH_AHEAD + 1):
+            idx = self._index + offset
+            if idx >= len(self._detection_ids):
+                break
+            det_id = self._detection_ids[idx]
+            if det_id in self._tile_cache or det_id in self._prefetching:
+                continue
+            row = self._reviews[self._reviews["detection_id"] == det_id]
+            if row.empty:
+                continue
+            det = row.iloc[0].to_dict()
+            lat, lon = self._geometry_to_latlon(det.get("geometry"))
+            if lat is None:
+                continue
+            self._prefetching.add(det_id)
+            threading.Thread(target=self._bg_prefetch, args=(det_id, lat, lon), daemon=True).start()
 
-    def _do_fetch_tile(self, lat: float, lon: float) -> None:
+    def _bg_prefetch(self, det_id: int, lat: float, lon: float) -> None:
+        renderable = self._render_tile(lat, lon)
+        if renderable is not None:
+            self._tile_cache[det_id] = renderable
+        self._prefetching.discard(det_id)
+
+    def _bg_fetch_tile(self, det_id: int, lat: float, lon: float) -> None:
+        renderable = self._render_tile(lat, lon)
+        if renderable is not None:
+            self._pending_tile = renderable
+            self._pending_det_id = det_id
+        else:
+            self._pending_tile = "[red]Failed to load tile[/]"
+
+    def _render_tile(self, lat: float, lon: float):
         old_stderr = sys.stderr
         sys.stderr = io.StringIO()
         try:
             tile_bytes = _fetch_tile_grid(lat, lon, zoom=18, grid=3)
         except Exception:
             sys.stderr = old_stderr
-            self._pending_tile = "[red]Failed to load tile[/]"
-            return
+            return None
         sys.stderr = old_stderr
 
         from PIL import Image as PILImage
@@ -403,10 +449,10 @@ class ReviewScreen(Screen):
         h = min(panel.size.height - 2, len(_NUMBER_TO_DIACRITIC)) if panel.size.height > 10 else 40
         try:
             image_id = _transmit_image(img, w, h)
-            self._pending_tile = TilePlaceholder(image_id, w, h)
+            return TilePlaceholder(image_id, w, h)
         except Exception:
             from textual_image.renderable.halfcell import Image as HalfcellImage
-            self._pending_tile = HalfcellImage(img, width=w, height=h)
+            return HalfcellImage(img, width=w, height=h)
 
 
 
