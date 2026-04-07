@@ -376,6 +376,7 @@ class ReviewScreen(Screen):
             self._tile_poll_timer.stop()
             self.query_one("#tile-panel", Static).update(self._pending_tile)
             self._pending_tile = None
+            self.refresh()
 
     def _fetch_and_render_tile(self, lat: float, lon: float) -> None:
         old_stderr = sys.stderr
