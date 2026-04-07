@@ -193,8 +193,7 @@ class ReviewScreen(Screen):
             tile_panel.update("[dim]No coordinates[/]")
             return
 
-        tile_panel.update(f"[dim]Loading tile at {lat:.4f}, {lon:.4f}...[/]")
-        self._run_tile_worker(lat, lon)
+        tile_panel.update(f"[bold]Tile[/] at {lat:.4f}, {lon:.4f}")
 
     def _run_tile_worker(self, lat: float, lon: float) -> None:
         self.run_worker(
