@@ -71,7 +71,10 @@ def _comments_path(project_dir: Path) -> Path:
 def _next_id(df: pd.DataFrame, id_col: str) -> int:
     if df.empty:
         return 1
-    return int(df[id_col].max()) + 1
+    max_val = df[id_col].dropna().max()
+    if pd.isna(max_val):
+        return 1
+    return int(max_val) + 1
 
 
 # --- Jobs ---

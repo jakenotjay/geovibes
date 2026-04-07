@@ -15,7 +15,6 @@ import faiss
 import numpy as np
 
 from geovibes.cli.ledger import create_job, update_job
-from geovibes.cli.project import load_project
 
 
 RES_TO_IFD = {10: 0, 20: 1, 40: 2, 80: 3}
@@ -190,10 +189,8 @@ def _create_faiss_index(index_path: Path, embeddings: np.ndarray):
     click.echo(f"FAISS index saved ({index.ntotal:,} vectors) in {elapsed:.1f}s")
 
 
-def run_load(project_dir: Path, source: str = "source-coop") -> Dict:
+def run_load(project_dir: Path, config: Dict, source: str = "source-coop") -> Dict:
     """Run the full load pipeline: aef-loader → DuckDB + FAISS."""
-    config = load_project(project_dir)
-
     bbox = config["bbox"]
     years = config["years"]
     resolution = config.get("resolution", 80)

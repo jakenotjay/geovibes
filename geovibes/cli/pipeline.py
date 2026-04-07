@@ -9,7 +9,7 @@ import duckdb
 import numpy as np
 import pandas as pd
 
-from geovibes.cli.ledger import create_job, update_job, save_reviews, REVIEWS_SCHEMA
+from geovibes.cli.ledger import create_job, load_reviews, update_job, save_reviews
 from geovibes.cli.project import load_project, save_project
 
 
@@ -154,12 +154,14 @@ def run_infer(
 
     for offset in range(0, total_count, batch_size):
         batch = conn.execute(
-            f"""
+            """
             SELECT id, CAST(embedding AS FLOAT[]) as embedding,
                    ST_AsBinary(geometry) as geometry
             FROM geo_embeddings
-            LIMIT {batch_size} OFFSET {offset}
-            """
+            ORDER BY id
+            LIMIT ? OFFSET ?
+            """,
+            [batch_size, offset],
         ).fetchdf()
 
         if batch.empty:
@@ -237,32 +239,36 @@ def run_cluster(
 
     start = time.perf_counter()
 
-    reviews = pd.read_parquet(project_dir / "reviews.parquet")
+    reviews = load_reviews(project_dir)
     if reviews.empty:
         update_job(project_dir, job_id, status="done", summary="No detections to cluster")
         return {"n_clusters": 0}
 
     import shapely.wkb
+    valid_mask = reviews["geometry"].notna()
+    valid_reviews = reviews[valid_mask].copy()
+
+    if valid_reviews.empty:
+        update_job(project_dir, job_id, status="done", summary="No detections with geometry")
+        return {"n_clusters": 0}
+
     coords = []
-    for geom_bytes in reviews["geometry"]:
-        if geom_bytes is not None:
-            point = shapely.wkb.loads(geom_bytes)
-            coords.append([point.x, point.y])
-        else:
-            coords.append([0, 0])
+    for geom_bytes in valid_reviews["geometry"]:
+        point = shapely.wkb.loads(geom_bytes)
+        coords.append([point.y, point.x])
     coords = np.array(coords)
 
-    from math import radians
     coords_rad = np.radians(coords)
     eps_rad = eps_m / 6_378_137.0
 
     from sklearn.cluster import DBSCAN
     db = DBSCAN(eps=eps_rad, min_samples=min_samples, metric="haversine")
-    labels = db.fit_predict(coords_rad)
+    cluster_labels = db.fit_predict(coords_rad)
 
-    reviews["cluster_id"] = labels
-    n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
-    n_noise = int((labels == -1).sum())
+    valid_reviews["cluster_id"] = cluster_labels
+    reviews.loc[valid_mask, "cluster_id"] = cluster_labels
+    n_clusters = len(set(cluster_labels)) - (1 if -1 in cluster_labels else 0)
+    n_noise = int((cluster_labels == -1).sum())
 
     save_reviews(project_dir, reviews)
 

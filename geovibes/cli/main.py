@@ -43,7 +43,7 @@ def load(source):
 
     config = load_project()
     project_dir = config["_project_dir"]
-    run_load(project_dir=project_dir, source=source)
+    run_load(project_dir=project_dir, config=config, source=source)
 
 
 @cli.command()

@@ -310,11 +310,22 @@ class SearchScreen(Screen):
         config = self.app.config
         iteration = config.get("iteration", 0) + 1
 
+        all_ids = list(self._pos_ids) + list(self._neg_ids)
+        geom_lookup = {}
+        if self._conn and all_ids:
+            from geovibes.cli.search import fetch_embeddings as _fetch
+            geo_df = self._conn.execute(
+                f"SELECT id, ST_AsBinary(geometry) as geometry FROM geo_embeddings WHERE id IN ({','.join(['?' for _ in all_ids])})",
+                all_ids,
+            ).fetchdf()
+            geom_lookup = dict(zip(geo_df["id"], geo_df["geometry"]))
+
+        now = datetime.now(timezone.utc)
         rows = []
         for pid in self._pos_ids:
-            rows.append({"id": pid, "geometry": None, "label": 1, "source": "manual", "iteration": iteration, "created_at": datetime.now(timezone.utc)})
+            rows.append({"id": pid, "geometry": geom_lookup.get(pid), "label": 1, "source": "manual", "iteration": iteration, "created_at": now})
         for nid in self._neg_ids:
-            rows.append({"id": nid, "geometry": None, "label": 0, "source": "hard_negative", "iteration": iteration, "created_at": datetime.now(timezone.utc)})
+            rows.append({"id": nid, "geometry": geom_lookup.get(nid), "label": 0, "source": "hard_negative", "iteration": iteration, "created_at": now})
 
         df = pd.DataFrame(rows)
         path = save_labels(project_dir, df, iteration)

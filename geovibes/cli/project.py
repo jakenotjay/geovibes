@@ -70,15 +70,14 @@ def load_project(path: Optional[Path] = None) -> Dict:
 
 
 def save_project(config: Dict) -> None:
-    project_dir = config.pop("_project_dir", None)
+    project_dir = config.get("_project_dir")
     if project_dir is None:
         raise ValueError("Config missing _project_dir; use load_project() first")
 
+    to_write = {k: v for k, v in config.items() if k != "_project_dir"}
     config_path = Path(project_dir) / CONFIG_FILE
     with open(config_path, "w") as f:
-        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-
-    config["_project_dir"] = project_dir
+        yaml.dump(to_write, f, default_flow_style=False, sort_keys=False)
 
 
 def _find_project_root(start: Path) -> Path:
