@@ -89,6 +89,7 @@ class QueueScreen(Screen):
         )
 
         table = self.query_one("#jobs-table", DataTable)
+        cursor_row = table.cursor_row
         table.clear()
 
         for _, row in jobs.iloc[::-1].iterrows():
@@ -100,6 +101,9 @@ class QueueScreen(Screen):
                 _format_elapsed(row.get("started_at"), row.get("finished_at")),
                 str(row.get("summary", "") or ""),
             )
+
+        if table.row_count:
+            table.move_cursor(row=min(cursor_row, table.row_count - 1))
 
     def action_refresh_table(self) -> None:
         self._load_data()
