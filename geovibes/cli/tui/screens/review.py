@@ -171,9 +171,11 @@ class ReviewScreen(Screen):
         self._sort_mode = "cluster"
         self._tile_cache: dict = {}
         self._prefetching: set = set()
-        self._pending_result: Optional[Tuple[int, object]] = None
+        self._pending_result: Optional[Tuple[int, Optional[int], object]] = None
         self._fetch_generation = 0
         self._panel_dims: Tuple[int, int] = (80, 40)
+        self._tile_poll_timer = None
+        self._cache_order: list = []
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -202,7 +204,7 @@ class ReviewScreen(Screen):
         det_id = det["detection_id"]
         renderable = self._render_tile(lat, lon)
         if renderable is not None:
-            self._tile_cache[det_id] = renderable
+            self._cache_put(det_id, renderable)
             self.query_one("#tile-panel", Static).update(renderable)
         self._prefetch_upcoming()
 
@@ -391,23 +393,33 @@ class ReviewScreen(Screen):
         tile_panel.update("[dim]Loading...[/]")
         self._fetch_generation += 1
         gen = self._fetch_generation
-        if hasattr(self, "_tile_poll_timer"):
+        if self._tile_poll_timer is not None:
             self._tile_poll_timer.stop()
         self._pending_result = None
         threading.Thread(target=self._bg_fetch_tile, args=(gen, det_id, lat, lon), daemon=True).start()
         self._tile_poll_timer = self.set_interval(0.1, self._check_tile_ready)
 
+    def _cache_put(self, det_id, renderable) -> None:
+        if det_id in self._tile_cache:
+            return
+        self._tile_cache[det_id] = renderable
+        self._cache_order.append(det_id)
+        while len(self._cache_order) > 100:
+            evict = self._cache_order.pop(0)
+            self._tile_cache.pop(evict, None)
+
     def _check_tile_ready(self) -> None:
         result = self._pending_result
         if result is not None:
             gen, det_id, renderable = result
-            if gen == self._fetch_generation:
-                self._tile_poll_timer.stop()
-                self.query_one("#tile-panel", Static).update(renderable)
-                if det_id is not None:
-                    self._tile_cache[det_id] = renderable
-                self._prefetch_upcoming()
             self._pending_result = None
+            if det_id is not None:
+                self._cache_put(det_id, renderable)
+            if gen == self._fetch_generation:
+                if self._tile_poll_timer is not None:
+                    self._tile_poll_timer.stop()
+                self.query_one("#tile-panel", Static).update(renderable)
+                self._prefetch_upcoming()
 
     def _prefetch_upcoming(self) -> None:
         for offset in range(1, self.PREFETCH_AHEAD + 1):
@@ -430,7 +442,7 @@ class ReviewScreen(Screen):
     def _bg_prefetch(self, det_id: int, lat: float, lon: float) -> None:
         renderable = self._render_tile(lat, lon)
         if renderable is not None:
-            self._tile_cache[det_id] = renderable
+            self._cache_put(det_id, renderable)
         self._prefetching.discard(det_id)
 
     def _bg_fetch_tile(self, gen: int, det_id: int, lat: float, lon: float) -> None:
