@@ -364,11 +364,13 @@ class ReviewScreen(Screen):
         if hasattr(self, "_tile_poll_timer"):
             self._tile_poll_timer.stop()
 
+        self._trace(f"_fetch_tile lat={lat} lon={lon}")
         tile_panel.update(f"[dim]Loading tile at {lat:.4f}, {lon:.4f}...[/]")
         self._pending_tile = None
         import threading
         t = threading.Thread(target=self._fetch_and_render_tile, args=(lat, lon), daemon=True)
         t.start()
+        self._trace("thread started")
         self._tile_poll_timer = self.set_interval(0.2, self._check_tile_ready)
 
     _trace_log = "/tmp/tui_tile_trace.log"
@@ -382,31 +384,40 @@ class ReviewScreen(Screen):
         self._trace(f"poll pending={self._pending_tile is not None}")
         if self._pending_tile is not None:
             self._tile_poll_timer.stop()
+            self._trace("updating tile")
             self.query_one("#tile-panel", Static).update(self._pending_tile)
             self._pending_tile = None
+            self._trace("tile updated")
 
     def _fetch_and_render_tile(self, lat: float, lon: float) -> None:
+        self._trace("thread: start fetch")
         old_stderr = sys.stderr
         sys.stderr = io.StringIO()
         try:
             tile_bytes = _fetch_tile_grid(lat, lon, zoom=18, grid=3)
-        except Exception:
+        except Exception as e:
             sys.stderr = old_stderr
+            self._trace(f"thread: fetch failed {e}")
             self._pending_tile = "[red]Failed to load tile[/]"
             return
         sys.stderr = old_stderr
+        self._trace(f"thread: fetched {len(tile_bytes)} bytes")
 
         from PIL import Image as PILImage
         img = PILImage.open(io.BytesIO(tile_bytes))
         panel = self.query_one("#tile-panel", Static)
         w = min(panel.size.width - 2, len(_NUMBER_TO_DIACRITIC)) if panel.size.width > 10 else 80
         h = min(panel.size.height - 2, len(_NUMBER_TO_DIACRITIC)) if panel.size.height > 10 else 40
+        self._trace(f"thread: w={w} h={h}")
         try:
             image_id = _transmit_image(img, w, h)
+            self._trace(f"thread: TGP id={image_id}")
             self._pending_tile = TilePlaceholder(image_id, w, h)
-        except Exception:
+        except Exception as e:
+            self._trace(f"thread: TGP failed {e}")
             from textual_image.renderable.halfcell import Image as HalfcellImage
             self._pending_tile = HalfcellImage(img, width=w, height=h)
+        self._trace("thread: pending set")
 
 
 
