@@ -34,7 +34,83 @@ from geovibes.cli.ledger import (
     update_job,
 )
 
-HAS_IMAGE = False
+from itertools import count
+from random import randint
+
+from rich.console import Console, ConsoleOptions, RenderResult
+from rich.measure import Measurement
+from rich.segment import Segment
+from rich.style import Style
+
+from textual_image._geometry import ImageSize
+from textual_image._pixeldata import PixelData
+from textual_image._terminal import get_cell_size
+from textual_image.renderable.tgp import (
+    _NUMBER_TO_DIACRITIC,
+    _PLACEHOLDER,
+    _TGP_MESSAGE_START,
+    _TGP_MESSAGE_END,
+)
+
+_tgp_id_counter = count(randint(1, 2**32))
+
+
+def _send_tgp_to_tty(*, payload: str | None = None, **kwargs: int | str | None) -> None:
+    """Send a Kitty graphics protocol message directly to /dev/tty."""
+    parts = [
+        _TGP_MESSAGE_START,
+        ",".join(f"{k}={v}" for k, v in kwargs.items() if v is not None),
+        f";{payload}" if payload else "",
+        _TGP_MESSAGE_END,
+    ]
+    sequence = "".join(parts)
+    fd = os.open("/dev/tty", os.O_WRONLY)
+    os.write(fd, sequence.encode())
+    os.close(fd)
+
+
+def _transmit_image(pil_image, cell_width, cell_height):
+    """Transmit image to terminal via /dev/tty, return image_id."""
+    image_id = next(_tgp_id_counter)
+    terminal_sizes = get_cell_size()
+    pixel_w = cell_width * terminal_sizes.cell_width
+    pixel_h = cell_height * terminal_sizes.cell_height
+
+    pixel_data = PixelData(pil_image)
+    image_data = pixel_data.scaled(pixel_w, pixel_h).to_base64()
+
+    while image_data:
+        chunk, image_data = image_data[:4096], image_data[4096:]
+        _send_tgp_to_tty(
+            i=image_id, m=1 if image_data else 0, f=100, payload=chunk, q=2,
+        )
+
+    _send_tgp_to_tty(a="p", i=image_id, c=cell_width, r=cell_height, U=1, q=2)
+    return image_id
+
+
+class TilePlaceholder:
+    """Rich renderable that emits only Kitty unicode placeholder diacritics."""
+
+    def __init__(self, image_id: int, width: int, height: int):
+        self.image_id = image_id
+        self.width = width
+        self.height = height
+
+    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
+        style = Style(
+            color=f"rgb({(self.image_id >> 16) & 255},{(self.image_id >> 8) & 255},{self.image_id & 255})"
+        )
+        id_char = _NUMBER_TO_DIACRITIC[(self.image_id >> 24) & 255]
+        for r in range(self.height):
+            line = "".join(
+                f"{chr(_PLACEHOLDER)}{chr(_NUMBER_TO_DIACRITIC[r])}{chr(_NUMBER_TO_DIACRITIC[c])}{chr(id_char)}"
+                for c in range(self.width)
+            )
+            yield Segment(line + "\n", style=style)
+
+    def __rich_measure__(self, console: Console, options: ConsoleOptions) -> Measurement:
+        return Measurement(self.width, self.width)
 
 
 GOOGLE_HYBRID_TEMPLATE = "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
@@ -226,12 +302,16 @@ class ReviewScreen(Screen):
         sys.stderr = old_stderr
 
         from PIL import Image as PILImage
-        from textual_image.renderable.halfcell import Image as HalfcellImage
         img = PILImage.open(io.BytesIO(tile_bytes))
         panel = self.query_one("#tile-panel", Static)
-        w = panel.size.width - 2 if panel.size.width > 10 else 80
-        h = panel.size.height - 2 if panel.size.height > 10 else 40
-        renderable = HalfcellImage(img, width=w, height=h)
+        w = min(panel.size.width - 2, len(_NUMBER_TO_DIACRITIC)) if panel.size.width > 10 else 80
+        h = min(panel.size.height - 2, len(_NUMBER_TO_DIACRITIC)) if panel.size.height > 10 else 40
+        try:
+            image_id = _transmit_image(img, w, h)
+            renderable = TilePlaceholder(image_id, w, h)
+        except Exception:
+            from textual_image.renderable.halfcell import Image as HalfcellImage
+            renderable = HalfcellImage(img, width=w, height=h)
         self.app.call_from_thread(
             self.query_one("#tile-panel", Static).update,
             renderable,
