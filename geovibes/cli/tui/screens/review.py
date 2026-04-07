@@ -13,7 +13,6 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
-from textual import work
 from textual.widgets import Footer, Header, Static
 
 # Import tile fetcher at module level to avoid triggering warnings inside threads
@@ -344,9 +343,10 @@ class ReviewScreen(Screen):
             return
 
         tile_panel.update(f"[dim]Loading tile at {lat:.4f}, {lon:.4f}...[/]")
-        self._fetch_and_render_tile(lat, lon)
+        import threading
+        t = threading.Thread(target=self._fetch_and_render_tile, args=(lat, lon), daemon=True)
+        t.start()
 
-    @work(thread=True, exclusive=True, name="tile_fetch")
     def _fetch_and_render_tile(self, lat: float, lon: float) -> None:
         old_stderr = sys.stderr
         sys.stderr = io.StringIO()
