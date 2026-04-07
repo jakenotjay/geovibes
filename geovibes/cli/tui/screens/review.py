@@ -3,9 +3,10 @@
 import io
 import os
 import sys
+import threading
 import warnings
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import pandas as pd
 
@@ -51,7 +52,6 @@ from textual_image.renderable.tgp import (
 _tgp_id_counter = count(randint(1, 2**32))
 
 
-import threading
 _tgp_lock = threading.Lock()
 
 
@@ -137,15 +137,6 @@ class TilePlaceholder:
 GOOGLE_HYBRID_TEMPLATE = "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
 
 
-from textual.message import Message
-
-
-class TileReady(Message):
-    def __init__(self, content) -> None:
-        super().__init__()
-        self.content = content
-
-
 class ReviewScreen(Screen):
     """One-at-a-time detection review with satellite imagery."""
 
@@ -180,6 +171,9 @@ class ReviewScreen(Screen):
         self._sort_mode = "cluster"
         self._tile_cache: dict = {}
         self._prefetching: set = set()
+        self._pending_result: Optional[Tuple[int, object]] = None
+        self._fetch_generation = 0
+        self._panel_dims: Tuple[int, int] = (80, 40)
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -204,6 +198,7 @@ class ReviewScreen(Screen):
         lat, lon = self._geometry_to_latlon(det.get("geometry"))
         if lat is None:
             return
+        self._update_panel_dims()
         det_id = det["detection_id"]
         renderable = self._render_tile(lat, lon)
         if renderable is not None:
@@ -372,12 +367,19 @@ class ReviewScreen(Screen):
         except Exception:
             return (None, None)
 
+    def _update_panel_dims(self) -> None:
+        panel = self.query_one("#tile-panel", Static)
+        w = panel.size.width - 2 if panel.size.width > 10 else 80
+        h = panel.size.height - 2 if panel.size.height > 10 else 40
+        self._panel_dims = (min(w, len(_NUMBER_TO_DIACRITIC)), min(h, len(_NUMBER_TO_DIACRITIC)))
+
     def _fetch_tile(self, lat: Optional[float], lon: Optional[float]) -> None:
         tile_panel = self.query_one("#tile-panel", Static)
         if lat is None or lon is None:
             tile_panel.update("[dim]No coordinates[/]")
             return
 
+        self._update_panel_dims()
         det = self._current_detection()
         det_id = det["detection_id"] if det else None
 
@@ -386,25 +388,28 @@ class ReviewScreen(Screen):
             self._prefetch_upcoming()
             return
 
-        tile_panel.update(f"[dim]Loading...[/]")
+        tile_panel.update("[dim]Loading...[/]")
+        self._fetch_generation += 1
+        gen = self._fetch_generation
         if hasattr(self, "_tile_poll_timer"):
             self._tile_poll_timer.stop()
-        self._pending_tile = None
-        self._pending_det_id = det_id
-        threading.Thread(target=self._bg_fetch_tile, args=(det_id, lat, lon), daemon=True).start()
+        self._pending_result = None
+        threading.Thread(target=self._bg_fetch_tile, args=(gen, det_id, lat, lon), daemon=True).start()
         self._tile_poll_timer = self.set_interval(0.1, self._check_tile_ready)
 
     def _check_tile_ready(self) -> None:
-        if self._pending_tile is not None:
-            self._tile_poll_timer.stop()
-            self.query_one("#tile-panel", Static).update(self._pending_tile)
-            if self._pending_det_id is not None:
-                self._tile_cache[self._pending_det_id] = self._pending_tile
-            self._pending_tile = None
-            self._prefetch_upcoming()
+        result = self._pending_result
+        if result is not None:
+            gen, det_id, renderable = result
+            if gen == self._fetch_generation:
+                self._tile_poll_timer.stop()
+                self.query_one("#tile-panel", Static).update(renderable)
+                if det_id is not None:
+                    self._tile_cache[det_id] = renderable
+                self._prefetch_upcoming()
+            self._pending_result = None
 
     def _prefetch_upcoming(self) -> None:
-        import threading
         for offset in range(1, self.PREFETCH_AHEAD + 1):
             idx = self._index + offset
             if idx >= len(self._detection_ids):
@@ -428,13 +433,12 @@ class ReviewScreen(Screen):
             self._tile_cache[det_id] = renderable
         self._prefetching.discard(det_id)
 
-    def _bg_fetch_tile(self, det_id: int, lat: float, lon: float) -> None:
+    def _bg_fetch_tile(self, gen: int, det_id: int, lat: float, lon: float) -> None:
         renderable = self._render_tile(lat, lon)
         if renderable is not None:
-            self._pending_tile = renderable
-            self._pending_det_id = det_id
+            self._pending_result = (gen, det_id, renderable)
         else:
-            self._pending_tile = "[red]Failed to load tile[/]"
+            self._pending_result = (gen, det_id, "[red]Failed to load tile[/]")
 
     def _render_tile(self, lat: float, lon: float):
         old_stderr = sys.stderr
@@ -442,22 +446,19 @@ class ReviewScreen(Screen):
         try:
             tile_bytes = _fetch_tile_grid(lat, lon, zoom=18, grid=3)
         except Exception:
-            sys.stderr = old_stderr
             return None
-        sys.stderr = old_stderr
+        finally:
+            sys.stderr = old_stderr
 
         from PIL import Image as PILImage
         img = PILImage.open(io.BytesIO(tile_bytes))
-        panel = self.query_one("#tile-panel", Static)
-        w = min(panel.size.width - 2, len(_NUMBER_TO_DIACRITIC)) if panel.size.width > 10 else 80
-        h = min(panel.size.height - 2, len(_NUMBER_TO_DIACRITIC)) if panel.size.height > 10 else 40
+        w, h = self._panel_dims
         try:
             image_id = _transmit_image(img, w, h)
             return TilePlaceholder(image_id, w, h)
         except Exception:
             from textual_image.renderable.halfcell import Image as HalfcellImage
             return HalfcellImage(img, width=w, height=h)
-
 
 
     def _apply_verdict(self, status: str) -> None:
