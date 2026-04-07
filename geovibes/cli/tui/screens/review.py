@@ -361,6 +361,9 @@ class ReviewScreen(Screen):
             tile_panel.update("[dim]No coordinates[/]")
             return
 
+        if hasattr(self, "_tile_poll_timer"):
+            self._tile_poll_timer.stop()
+
         tile_panel.update(f"[dim]Loading tile at {lat:.4f}, {lon:.4f}...[/]")
         self._pending_tile = None
         import threading
@@ -397,8 +400,7 @@ class ReviewScreen(Screen):
             from textual_image.renderable.halfcell import Image as HalfcellImage
             self._pending_tile = HalfcellImage(img, width=w, height=h)
 
-    def on_tile_ready(self, event: TileReady) -> None:
-        self.query_one("#tile-panel", Static).update(event.content)
+
 
     def _apply_verdict(self, status: str) -> None:
         det = self._current_detection()
