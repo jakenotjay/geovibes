@@ -283,6 +283,13 @@ class ReviewScreen(Screen):
         else:
             comment_lines = "  [dim](none)[/]"
 
+        mode_info = {
+            "cluster": ("[cyan]Cluster rep[/]", "1 per cluster, by score"),
+            "confident": ("[green]Confident[/]", "highest score first"),
+            "uncertain": ("[yellow]Uncertain[/]", "near decision boundary"),
+        }
+        mode_label, mode_desc = mode_info[self._sort_mode]
+
         meta_panel.update(
             f"[bold]Detection #{pos}/{total}[/]\n"
             f"\n"
@@ -292,6 +299,9 @@ class ReviewScreen(Screen):
             f"[dim]Lat:[/] {lat_str}\n"
             f"[dim]Lon:[/] {lon_str}\n"
             f"[dim]Status:[/] [{status_color}]{status}[/]\n"
+            f"\n"
+            f"[dim]Mode:[/] {mode_label}\n"
+            f"[dim italic]  {mode_desc} (m to change)[/]\n"
             f"\n"
             f"[bold]Comments:[/]\n{comment_lines}"
         )
