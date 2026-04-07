@@ -33,6 +33,8 @@ GOOGLE_HYBRID_TEMPLATE = "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
 class ReviewScreen(Screen):
     """One-at-a-time detection review with satellite imagery."""
 
+    can_focus = True
+
     BINDINGS = [
         Binding("a", "accept", "Accept", priority=True),
         Binding("r", "reject", "Reject", priority=True),
@@ -191,7 +193,8 @@ class ReviewScreen(Screen):
             tile_panel.update("[dim]No coordinates[/]")
             return
 
-        tile_panel.update(f"[dim]Loading tile at {lat:.4f}, {lon:.4f}...[/]")
+        tile_panel.update(f"[bold green]Tile[/] at {lat:.4f}, {lon:.4f}\n[dim]Press a/r/s to review, arrows to navigate[/]")
+        return  # skip tile fetch for now
         self._run_tile_worker(lat, lon)
 
     def _run_tile_worker(self, lat: float, lon: float) -> None:
