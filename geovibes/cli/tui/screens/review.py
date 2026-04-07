@@ -185,7 +185,21 @@ class ReviewScreen(Screen):
         self.call_after_refresh(self._mount_show)
 
     def _mount_show(self) -> None:
-        self._show_current()
+        self._show_current(skip_tile=True)
+        self.set_timer(0.3, self._mount_tile)
+
+    def _mount_tile(self) -> None:
+        det = self._current_detection()
+        if det is None:
+            return
+        lat, lon = self._geometry_to_latlon(det.get("geometry"))
+        if lat is None:
+            return
+        self._pending_tile = None
+        self._do_fetch_tile(lat, lon)
+        if self._pending_tile is not None:
+            self.query_one("#tile-panel", Static).update(self._pending_tile)
+            self._pending_tile = None
 
     def on_unmount(self) -> None:
         self._finish_review_job()
@@ -253,7 +267,7 @@ class ReviewScreen(Screen):
             return None
         return row.iloc[0].to_dict()
 
-    def _show_current(self) -> None:
+    def _show_current(self, skip_tile: bool = False) -> None:
         det = self._current_detection()
         meta_panel = self.query_one("#meta-panel", Static)
         tile_panel = self.query_one("#tile-panel", Static)
@@ -330,7 +344,8 @@ class ReviewScreen(Screen):
             f"[bold cyan]Mode: {mode_label[self._sort_mode]}[/] (m)"
         )
 
-        self._fetch_tile(lat, lon)
+        if not skip_tile:
+            self._fetch_tile(lat, lon)
 
     def _count_status(self, status: str) -> int:
         if self._reviews is None or self._reviews.empty:
@@ -353,6 +368,21 @@ class ReviewScreen(Screen):
             tile_panel.update("[dim]No coordinates[/]")
             return
 
+        tile_panel.update(f"[dim]Loading...[/]")
+        if hasattr(self, "_tile_poll_timer"):
+            self._tile_poll_timer.stop()
+        self._pending_tile = None
+        import threading
+        threading.Thread(target=self._bg_fetch_tile, args=(lat, lon), daemon=True).start()
+        self._tile_poll_timer = self.set_interval(0.1, self._check_tile_ready)
+
+    def _check_tile_ready(self) -> None:
+        if self._pending_tile is not None:
+            self._tile_poll_timer.stop()
+            self.query_one("#tile-panel", Static).update(self._pending_tile)
+            self._pending_tile = None
+
+    def _bg_fetch_tile(self, lat: float, lon: float) -> None:
         self._do_fetch_tile(lat, lon)
 
     def _do_fetch_tile(self, lat: float, lon: float) -> None:
@@ -362,7 +392,7 @@ class ReviewScreen(Screen):
             tile_bytes = _fetch_tile_grid(lat, lon, zoom=18, grid=3)
         except Exception:
             sys.stderr = old_stderr
-            self.query_one("#tile-panel", Static).update("[red]Failed to load tile[/]")
+            self._pending_tile = "[red]Failed to load tile[/]"
             return
         sys.stderr = old_stderr
 
@@ -373,11 +403,10 @@ class ReviewScreen(Screen):
         h = min(panel.size.height - 2, len(_NUMBER_TO_DIACRITIC)) if panel.size.height > 10 else 40
         try:
             image_id = _transmit_image(img, w, h)
-            renderable = TilePlaceholder(image_id, w, h)
+            self._pending_tile = TilePlaceholder(image_id, w, h)
         except Exception:
             from textual_image.renderable.halfcell import Image as HalfcellImage
-            renderable = HalfcellImage(img, width=w, height=h)
-        panel.update(renderable)
+            self._pending_tile = HalfcellImage(img, width=w, height=h)
 
 
 
