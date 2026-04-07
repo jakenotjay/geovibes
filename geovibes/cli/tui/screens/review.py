@@ -173,11 +173,9 @@ class ReviewScreen(Screen):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.call_after_refresh(self._initial_load)
-
-    def _initial_load(self) -> None:
         self._load_detections()
         self._show_current()
+        self.refresh()
 
     def on_unmount(self) -> None:
         self._finish_review_job()
