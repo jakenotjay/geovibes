@@ -354,10 +354,7 @@ class ReviewScreen(Screen):
             tile_bytes = _fetch_tile_grid(lat, lon, zoom=18, grid=3)
         except Exception:
             sys.stderr = old_stderr
-            self.app.call_from_thread(
-                self.query_one("#tile-panel", Static).update,
-                "[red]Failed to load tile[/]",
-            )
+            self.app.call_from_thread(self._update_tile, "[red]Failed to load tile[/]")
             return
         sys.stderr = old_stderr
 
@@ -372,10 +369,10 @@ class ReviewScreen(Screen):
         except Exception:
             from textual_image.renderable.halfcell import Image as HalfcellImage
             renderable = HalfcellImage(img, width=w, height=h)
-        self.app.call_from_thread(
-            self.query_one("#tile-panel", Static).update,
-            renderable,
-        )
+        self.app.call_from_thread(self._update_tile, renderable)
+
+    def _update_tile(self, content) -> None:
+        self.query_one("#tile-panel", Static).update(content)
 
     def _apply_verdict(self, status: str) -> None:
         det = self._current_detection()
