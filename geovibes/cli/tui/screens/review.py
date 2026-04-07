@@ -390,14 +390,13 @@ class ReviewScreen(Screen):
             self._prefetch_upcoming()
             return
 
-        tile_panel.update("[dim]Loading...[/]")
-        self._fetch_generation += 1
-        gen = self._fetch_generation
-        if self._tile_poll_timer is not None:
-            self._tile_poll_timer.stop()
-        self._pending_result = None
-        threading.Thread(target=self._bg_fetch_tile, args=(gen, det_id, lat, lon), daemon=True).start()
-        self._tile_poll_timer = self.set_interval(0.1, self._check_tile_ready)
+        renderable = self._render_tile(lat, lon)
+        if renderable is not None:
+            self._cache_put(det_id, renderable)
+            tile_panel.update(renderable)
+        else:
+            tile_panel.update("[red]Failed to load tile[/]")
+        self._prefetch_upcoming()
 
     def _cache_put(self, det_id, renderable) -> None:
         if det_id in self._tile_cache:
@@ -407,19 +406,6 @@ class ReviewScreen(Screen):
         while len(self._cache_order) > 100:
             evict = self._cache_order.pop(0)
             self._tile_cache.pop(evict, None)
-
-    def _check_tile_ready(self) -> None:
-        result = self._pending_result
-        if result is not None:
-            gen, det_id, renderable = result
-            self._pending_result = None
-            if det_id is not None:
-                self._cache_put(det_id, renderable)
-            if gen == self._fetch_generation:
-                if self._tile_poll_timer is not None:
-                    self._tile_poll_timer.stop()
-                self.query_one("#tile-panel", Static).update(renderable)
-                self._prefetch_upcoming()
 
     def _prefetch_upcoming(self) -> None:
         for offset in range(1, self.PREFETCH_AHEAD + 1):
@@ -444,13 +430,6 @@ class ReviewScreen(Screen):
         if renderable is not None:
             self._cache_put(det_id, renderable)
         self._prefetching.discard(det_id)
-
-    def _bg_fetch_tile(self, gen: int, det_id: int, lat: float, lon: float) -> None:
-        renderable = self._render_tile(lat, lon)
-        if renderable is not None:
-            self._pending_result = (gen, det_id, renderable)
-        else:
-            self._pending_result = (gen, det_id, "[red]Failed to load tile[/]")
 
     def _render_tile(self, lat: float, lon: float):
         old_stderr = sys.stderr
