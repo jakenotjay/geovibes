@@ -268,7 +268,9 @@ def run_cluster(
     cluster_labels = db.fit_predict(coords_rad)
 
     reviews["cluster_id"] = pd.array([None] * len(reviews), dtype="Int64")
-    reviews.loc[valid_mask, "cluster_id"] = cluster_labels
+    reviews.loc[valid_mask, "cluster_id"] = pd.array(
+        cluster_labels.tolist(), dtype="Int64"
+    )
     n_clusters = len(set(cluster_labels)) - (1 if -1 in cluster_labels else 0)
     n_noise = int((cluster_labels == -1).sum())
 
@@ -294,8 +296,13 @@ def _load_label_file(path: Path) -> pd.DataFrame:
         import geopandas as gpd
         df = gpd.read_file(path)
         if "label" not in df.columns and "class" in df.columns:
+            class_to_label = {
+                "geovibes_pos": 1, "positive": 1, "relabel_pos": 1,
+                "geovibes_neg": 0, "negative": 0, "relabel_neg": 0,
+                "geovibes_sampled_neg": 0, "sampled": 0,
+            }
             df["label"] = df["class"].map(
-                lambda c: 1 if "pos" in str(c).lower() else 0
+                lambda c: class_to_label.get(str(c).lower(), 0)
             )
     else:
         raise ValueError(f"Unsupported label file format: {suffix}")

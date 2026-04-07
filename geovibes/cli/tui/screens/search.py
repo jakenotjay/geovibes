@@ -175,8 +175,11 @@ class SearchScreen(Screen):
         )
 
     async def _fetch_tile_async(self, lat: float, lon: float) -> bytes:
+        import asyncio
         from geovibes.ui.xyz import get_map_image
-        return get_map_image(source="GOOGLE_HYBRID", lon=lon, lat=lat, zoom=16)
+        return await asyncio.to_thread(
+            get_map_image, source="GOOGLE_HYBRID", lon=lon, lat=lat, zoom=16
+        )
 
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
         if event.worker.name != "search_tile_fetch":
