@@ -361,8 +361,7 @@ class ReviewScreen(Screen):
             tile_panel.update("[dim]No coordinates[/]")
             return
 
-        tile_panel.update(f"[dim]Loading tile at {lat:.4f}, {lon:.4f}...[/]")
-        self.set_timer(0.1, lambda: self._do_fetch_tile(lat, lon))
+        self._do_fetch_tile(lat, lon)
 
     def _do_fetch_tile(self, lat: float, lon: float) -> None:
         old_stderr = sys.stderr
