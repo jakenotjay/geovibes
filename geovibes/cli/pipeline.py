@@ -148,28 +148,33 @@ def run_infer(
     try:
         conn.execute("INSTALL spatial; LOAD spatial;")
         conn.execute("SET memory_limit='24GB'")
+        conn.execute("SET preserve_insertion_order=false")
+        conn.execute("SET threads=4")
 
         total_count = conn.execute("SELECT COUNT(*) FROM geo_embeddings").fetchone()[0]
         click.echo(f"Scoring {total_count:,} embeddings...")
 
         detections = []
         scored = 0
+        last_id = -1
 
-        for offset in range(0, total_count, batch_size):
+        while scored < total_count:
             batch = conn.execute(
                 """
                 SELECT id, CAST(embedding AS FLOAT[]) as embedding,
                        ST_AsWKB(geometry) as geometry
                 FROM geo_embeddings
+                WHERE id > ?
                 ORDER BY id
-                LIMIT ? OFFSET ?
+                LIMIT ?
                 """,
-                [batch_size, offset],
+                [last_id, batch_size],
             ).fetchdf()
 
             if batch.empty:
                 break
 
+            last_id = int(batch["id"].iloc[-1])
             X_batch = np.vstack(batch["embedding"].values).astype(np.float32)
             proba = model.predict_proba(X_batch)[:, 1]
             scored += len(batch)
