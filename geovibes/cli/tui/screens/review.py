@@ -24,12 +24,7 @@ from geovibes.cli.ledger import (
     update_job,
 )
 
-try:
-    from textual_image.widget import Image as TImage
-
-    HAS_IMAGE = True
-except ImportError:
-    HAS_IMAGE = False
+HAS_IMAGE = False
 
 
 GOOGLE_HYBRID_TEMPLATE = "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
@@ -39,14 +34,14 @@ class ReviewScreen(Screen):
     """One-at-a-time detection review with satellite imagery."""
 
     BINDINGS = [
-        Binding("a", "accept", "Accept"),
-        Binding("r", "reject", "Reject"),
-        Binding("s", "skip", "Skip"),
-        Binding("c", "comment", "Comment"),
-        Binding("u", "undo", "Undo"),
-        Binding("right", "next_detection", "Next", show=False),
-        Binding("left", "prev_detection", "Prev", show=False),
-        Binding("p", "filter_pending", "Pending only"),
+        Binding("a", "accept", "Accept", priority=True),
+        Binding("r", "reject", "Reject", priority=True),
+        Binding("s", "skip", "Skip", priority=True),
+        Binding("c", "comment", "Comment", priority=True),
+        Binding("u", "undo", "Undo", priority=True),
+        Binding("right", "next_detection", "Next", show=False, priority=True),
+        Binding("left", "prev_detection", "Prev", show=False, priority=True),
+        Binding("p", "filter_pending", "Pending only", priority=True),
     ]
 
     def __init__(self, **kwargs):
