@@ -40,62 +40,63 @@ def run_train(
     start = time.perf_counter()
 
     conn = duckdb.connect(str(db_path), read_only=True)
-    conn.execute("INSTALL spatial; LOAD spatial;")
-    conn.execute("SET memory_limit='24GB'")
+    try:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute("SET memory_limit='24GB'")
 
-    pos_dfs = [_load_label_file(f) for f in positives]
-    neg_dfs = [_load_label_file(f) for f in negatives] if negatives else []
+        pos_dfs = [_load_label_file(f) for f in positives]
+        neg_dfs = [_load_label_file(f) for f in negatives] if negatives else []
 
-    all_labels = pd.concat(pos_dfs + neg_dfs, ignore_index=True)
-    pos_count = int((all_labels["label"] == 1).sum())
-    neg_count = int((all_labels["label"] == 0).sum())
-    click.echo(f"Training data: {pos_count} positive, {neg_count} negative")
+        all_labels = pd.concat(pos_dfs + neg_dfs, ignore_index=True)
+        pos_count = int((all_labels["label"] == 1).sum())
+        neg_count = int((all_labels["label"] == 0).sum())
+        click.echo(f"Training data: {pos_count} positive, {neg_count} negative")
 
-    point_ids = all_labels["id"].tolist()
-    embeddings = _fetch_all_embeddings(conn, point_ids)
+        point_ids = all_labels["id"].tolist()
+        embeddings = _fetch_all_embeddings(conn, point_ids)
 
-    all_labels = all_labels.merge(embeddings, on="id", how="inner")
-    click.echo(f"Matched {len(all_labels)} embeddings from database")
+        all_labels = all_labels.merge(embeddings, on="id", how="inner")
+        click.echo(f"Matched {len(all_labels)} embeddings from database")
 
-    X = np.vstack(all_labels["embedding"].values).astype(np.float32)
-    y = all_labels["label"].values.astype(np.int32)
+        X = np.vstack(all_labels["embedding"].values).astype(np.float32)
+        y = all_labels["label"].values.astype(np.int32)
 
-    from sklearn.model_selection import train_test_split
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_fraction, random_state=42, stratify=y
-    )
-
-    if classifier_type == "linear-svm":
-        from sklearn.svm import LinearSVC
-        from sklearn.calibration import CalibratedClassifierCV
-        base = LinearSVC(C=1.0, class_weight="balanced", max_iter=10000, random_state=42)
-        model = CalibratedClassifierCV(base, cv=3)
-    else:
-        from xgboost import XGBClassifier
-        model = XGBClassifier(
-            n_estimators=100, max_depth=6, learning_rate=0.1, random_state=42,
-            use_label_encoder=False, eval_metric="logloss",
+        from sklearn.model_selection import train_test_split
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=test_fraction, random_state=42, stratify=y
         )
 
-    model.fit(X_train, y_train)
-    train_time = time.perf_counter() - start
+        if classifier_type == "linear-svm":
+            from sklearn.svm import LinearSVC
+            from sklearn.calibration import CalibratedClassifierCV
+            base = LinearSVC(C=1.0, class_weight="balanced", max_iter=10000, random_state=42)
+            model = CalibratedClassifierCV(base, cv=3)
+        else:
+            from xgboost import XGBClassifier
+            model = XGBClassifier(
+                n_estimators=100, max_depth=6, learning_rate=0.1, random_state=42,
+                eval_metric="logloss",
+            )
 
-    from sklearn.metrics import f1_score, roc_auc_score
-    y_pred = model.predict(X_test)
-    y_proba = model.predict_proba(X_test)[:, 1]
-    f1 = f1_score(y_test, y_pred)
-    auc = roc_auc_score(y_test, y_proba)
+        model.fit(X_train, y_train)
+        train_time = time.perf_counter() - start
 
-    click.echo(f"Train time: {train_time:.2f}s | F1: {f1:.3f} | AUC: {auc:.3f}")
+        from sklearn.metrics import f1_score, roc_auc_score
+        y_pred = model.predict(X_test)
+        y_proba = model.predict_proba(X_test)[:, 1]
+        f1 = f1_score(y_test, y_pred)
+        auc = roc_auc_score(y_test, y_proba)
 
-    import joblib
-    model_dir = project_dir / "models"
-    model_dir.mkdir(exist_ok=True)
-    model_path = model_dir / f"{classifier_type}_v{iteration}.pkl"
-    joblib.dump(model, model_path)
-    click.echo(f"Model saved to {model_path}")
+        click.echo(f"Train time: {train_time:.2f}s | F1: {f1:.3f} | AUC: {auc:.3f}")
 
-    conn.close()
+        import joblib
+        model_dir = project_dir / "models"
+        model_dir.mkdir(exist_ok=True)
+        model_path = model_dir / f"{classifier_type}_v{iteration}.pkl"
+        joblib.dump(model, model_path)
+        click.echo(f"Model saved to {model_path}")
+    finally:
+        conn.close()
 
     update_job(
         project_dir, job_id,
@@ -143,47 +144,48 @@ def run_infer(
     click.echo(f"Loaded model from {model_path}")
 
     conn = duckdb.connect(str(db_path), read_only=True)
-    conn.execute("INSTALL spatial; LOAD spatial;")
-    conn.execute("SET memory_limit='24GB'")
+    try:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute("SET memory_limit='24GB'")
 
-    total_count = conn.execute("SELECT COUNT(*) FROM geo_embeddings").fetchone()[0]
-    click.echo(f"Scoring {total_count:,} embeddings...")
+        total_count = conn.execute("SELECT COUNT(*) FROM geo_embeddings").fetchone()[0]
+        click.echo(f"Scoring {total_count:,} embeddings...")
 
-    detections = []
-    scored = 0
+        detections = []
+        scored = 0
 
-    for offset in range(0, total_count, batch_size):
-        batch = conn.execute(
-            """
-            SELECT id, CAST(embedding AS FLOAT[]) as embedding,
-                   ST_AsBinary(geometry) as geometry
-            FROM geo_embeddings
-            ORDER BY id
-            LIMIT ? OFFSET ?
-            """,
-            [batch_size, offset],
-        ).fetchdf()
+        for offset in range(0, total_count, batch_size):
+            batch = conn.execute(
+                """
+                SELECT id, CAST(embedding AS FLOAT[]) as embedding,
+                       ST_AsBinary(geometry) as geometry
+                FROM geo_embeddings
+                ORDER BY id
+                LIMIT ? OFFSET ?
+                """,
+                [batch_size, offset],
+            ).fetchdf()
 
-        if batch.empty:
-            break
+            if batch.empty:
+                break
 
-        X_batch = np.vstack(batch["embedding"].values).astype(np.float32)
-        proba = model.predict_proba(X_batch)[:, 1]
-        scored += len(batch)
+            X_batch = np.vstack(batch["embedding"].values).astype(np.float32)
+            proba = model.predict_proba(X_batch)[:, 1]
+            scored += len(batch)
 
-        mask = proba >= threshold
-        if mask.any():
-            det_batch = batch[mask].copy()
-            det_batch["score"] = proba[mask]
-            detections.append(det_batch[["id", "geometry", "score"]])
+            mask = proba >= threshold
+            if mask.any():
+                det_batch = batch[mask].copy()
+                det_batch["score"] = proba[mask]
+                detections.append(det_batch[["id", "geometry", "score"]])
 
-        elapsed = time.perf_counter() - start
-        click.echo(f"  {scored:,}/{total_count:,} ({elapsed:.1f}s)", nl=False)
-        click.echo("\r", nl=False)
+            elapsed = time.perf_counter() - start
+            click.echo(f"  {scored:,}/{total_count:,} ({elapsed:.1f}s)", nl=False)
+            click.echo("\r", nl=False)
 
-    click.echo()
-
-    conn.close()
+        click.echo()
+    finally:
+        conn.close()
     infer_time = time.perf_counter() - start
 
     if detections:
@@ -265,7 +267,6 @@ def run_cluster(
     db = DBSCAN(eps=eps_rad, min_samples=min_samples, metric="haversine")
     cluster_labels = db.fit_predict(coords_rad)
 
-    reviews["cluster_id"] = -1
     reviews.loc[valid_mask, "cluster_id"] = cluster_labels
     n_clusters = len(set(cluster_labels)) - (1 if -1 in cluster_labels else 0)
     n_noise = int((cluster_labels == -1).sum())

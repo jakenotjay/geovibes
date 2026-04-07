@@ -25,10 +25,10 @@ def nearest_point(
 ) -> Optional[Tuple]:
     sql = """
     SELECT id, ST_AsGeoJSON(geometry) as geometry,
-           ST_Distance(geometry, ST_Point(?, ?)) AS dist_m,
+           ST_Distance(geometry, ST_Point(?, ?)) AS dist,
            CAST(embedding AS FLOAT[]) as embedding
     FROM geo_embeddings
-    ORDER BY dist_m
+    ORDER BY dist
     LIMIT 1
     """
     return conn.execute(sql, [lon, lat]).fetchone()

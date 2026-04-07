@@ -4,6 +4,8 @@ from io import BytesIO
 from pathlib import Path
 from typing import List, Optional
 
+import pandas as pd
+
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -127,7 +129,7 @@ class ReviewScreen(Screen):
         status_color = status_colors.get(status, "white")
 
         cluster_id = det.get("cluster_id")
-        cluster_str = f"C-{int(cluster_id):03d}" if cluster_id is not None else "—"
+        cluster_str = f"C-{int(cluster_id):03d}" if pd.notna(cluster_id) else "—"
 
         lat, lon = self._geometry_to_latlon(det.get("geometry"))
         lat_str = f"{lat:.4f}" if lat else "—"
@@ -217,9 +219,10 @@ class ReviewScreen(Screen):
                 from PIL import Image as PILImage
 
                 img = PILImage.open(BytesIO(tile_bytes))
+                from textual.css.query import NoMatches
                 try:
                     tile_panel.remove_children()
-                except Exception:
+                except NoMatches:
                     pass
                 new_widget = TImage(img)
                 self.call_after_refresh(lambda w=new_widget, p=tile_panel: p.mount(w))

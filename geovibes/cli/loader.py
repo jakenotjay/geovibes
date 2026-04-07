@@ -171,6 +171,8 @@ def _create_faiss_index(index_path: Path, embeddings: np.ndarray):
         m = max(d for d in range(1, min(65, dim + 1)) if dim % d == 0)
         nbits = 8
 
+        if m < 4:
+            click.echo(f"  Warning: PQ sub-vectors m={m} is low for dim={dim}; consider a different dimension")
         click.echo(f"  Training IVF-PQ: nlist={nlist}, m={m}, nbits={nbits}")
         quantizer = faiss.IndexFlatL2(dim)
         index = faiss.IndexIVFPQ(quantizer, dim, nlist, m, nbits)

@@ -187,9 +187,10 @@ class SearchScreen(Screen):
             if HAS_IMAGE and tile_bytes:
                 from PIL import Image as PILImage
                 img = PILImage.open(BytesIO(tile_bytes))
+                from textual.css.query import NoMatches
                 try:
                     tile_panel.remove_children()
-                except Exception:
+                except NoMatches:
                     pass
                 new_widget = TImage(img)
                 self.call_after_refresh(lambda w=new_widget, p=tile_panel: p.mount(w))
@@ -329,6 +330,11 @@ class SearchScreen(Screen):
 
         bar = self.query_one("#search-results-bar", Static)
         bar.update(f"[green]Saved {len(rows)} labels to {path.name}[/]")
+
+    def on_unmount(self) -> None:
+        if self._conn:
+            self._conn.close()
+            self._conn = None
 
     def on_screen_resume(self) -> None:
         self._update_header()
