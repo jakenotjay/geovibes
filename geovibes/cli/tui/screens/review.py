@@ -361,63 +361,32 @@ class ReviewScreen(Screen):
             tile_panel.update("[dim]No coordinates[/]")
             return
 
-        if hasattr(self, "_tile_poll_timer"):
-            self._tile_poll_timer.stop()
-
-        self._trace(f"_fetch_tile lat={lat} lon={lon}")
         tile_panel.update(f"[dim]Loading tile at {lat:.4f}, {lon:.4f}...[/]")
-        self._pending_tile = None
-        import threading
-        t = threading.Thread(target=self._fetch_and_render_tile, args=(lat, lon), daemon=True)
-        t.start()
-        self._trace("thread started")
-        self._tile_poll_timer = self.set_interval(0.2, self._check_tile_ready)
+        self.set_timer(0.1, lambda: self._do_fetch_tile(lat, lon))
 
-    _trace_log = "/tmp/tui_tile_trace.log"
-
-    def _trace(self, msg: str) -> None:
-        import time
-        with open(self._trace_log, "a") as f:
-            f.write(f"{time.time():.3f} {msg}\n")
-
-    def _check_tile_ready(self) -> None:
-        self._trace(f"poll pending={self._pending_tile is not None}")
-        if self._pending_tile is not None:
-            self._tile_poll_timer.stop()
-            self._trace("updating tile")
-            self.query_one("#tile-panel", Static).update(self._pending_tile)
-            self._pending_tile = None
-            self._trace("tile updated")
-
-    def _fetch_and_render_tile(self, lat: float, lon: float) -> None:
-        self._trace("thread: start fetch")
+    def _do_fetch_tile(self, lat: float, lon: float) -> None:
         old_stderr = sys.stderr
         sys.stderr = io.StringIO()
         try:
             tile_bytes = _fetch_tile_grid(lat, lon, zoom=18, grid=3)
-        except Exception as e:
+        except Exception:
             sys.stderr = old_stderr
-            self._trace(f"thread: fetch failed {e}")
-            self._pending_tile = "[red]Failed to load tile[/]"
+            self.query_one("#tile-panel", Static).update("[red]Failed to load tile[/]")
             return
         sys.stderr = old_stderr
-        self._trace(f"thread: fetched {len(tile_bytes)} bytes")
 
         from PIL import Image as PILImage
         img = PILImage.open(io.BytesIO(tile_bytes))
         panel = self.query_one("#tile-panel", Static)
         w = min(panel.size.width - 2, len(_NUMBER_TO_DIACRITIC)) if panel.size.width > 10 else 80
         h = min(panel.size.height - 2, len(_NUMBER_TO_DIACRITIC)) if panel.size.height > 10 else 40
-        self._trace(f"thread: w={w} h={h}")
         try:
             image_id = _transmit_image(img, w, h)
-            self._trace(f"thread: TGP id={image_id}")
-            self._pending_tile = TilePlaceholder(image_id, w, h)
-        except Exception as e:
-            self._trace(f"thread: TGP failed {e}")
+            renderable = TilePlaceholder(image_id, w, h)
+        except Exception:
             from textual_image.renderable.halfcell import Image as HalfcellImage
-            self._pending_tile = HalfcellImage(img, width=w, height=h)
-        self._trace("thread: pending set")
+            renderable = HalfcellImage(img, width=w, height=h)
+        panel.update(renderable)
 
 
 
