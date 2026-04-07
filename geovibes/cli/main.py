@@ -36,11 +36,14 @@ def init(name, bbox, years, res, target):
 
 
 @cli.command()
-def load():
-    """Load embeddings into the project database (aef-loader)."""
+@click.option("--source", default="source-coop", type=click.Choice(["source-coop", "gcs"]))
+def load(source):
+    """Load AEF embeddings into the project database."""
+    from geovibes.cli.loader import run_load
+
     config = load_project()
-    click.echo(f"Loading embeddings for {config['name']}...")
-    click.echo("Not yet implemented — requires aef-loader IFD support")
+    project_dir = config["_project_dir"]
+    run_load(project_dir=project_dir, source=source)
 
 
 @cli.command()
