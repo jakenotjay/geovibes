@@ -47,10 +47,16 @@ def _status_markup(status: str) -> str:
 class QueueScreen(Screen):
     """Job queue showing all operations performed on the project."""
 
+    FILTERS = ["all", "running", "failed", "done"]
+
     BINDINGS = [
         Binding("r", "refresh_table", "Refresh"),
         Binding("f", "filter", "Filter"),
     ]
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._filter = "all"
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -80,19 +86,26 @@ class QueueScreen(Screen):
         rejected = len(reviews[reviews["status"] == "rejected"]) if not reviews.empty else 0
         total_det = len(reviews)
 
+        if self._filter != "all" and not jobs.empty:
+            visible_jobs = jobs[jobs["status"] == self._filter]
+        else:
+            visible_jobs = jobs
+
+        filter_label = f"[bold cyan]Filter: {self._filter}[/] (f)"
         header = self.query_one("#queue-header", Static)
         header.update(
             f"[bold]{self.app.config.get('name', '')}[/] — "
-            f"Jobs: {len(jobs)} | "
+            f"Jobs: {len(visible_jobs)}/{len(jobs)} | "
             f"Detections: {total_det} "
-            f"([green]A:{accepted}[/] [red]R:{rejected}[/] [yellow]P:{pending}[/])"
+            f"([green]A:{accepted}[/] [red]R:{rejected}[/] [yellow]P:{pending}[/])  "
+            f"{filter_label}"
         )
 
         table = self.query_one("#jobs-table", DataTable)
         cursor_row = table.cursor_row
         table.clear()
 
-        for _, row in jobs.iloc[::-1].iterrows():
+        for _, row in visible_jobs.iloc[::-1].iterrows():
             table.add_row(
                 str(int(row["job_id"])),
                 row["job_type"],
@@ -109,4 +122,6 @@ class QueueScreen(Screen):
         self._load_data()
 
     def action_filter(self) -> None:
-        pass
+        idx = self.FILTERS.index(self._filter)
+        self._filter = self.FILTERS[(idx + 1) % len(self.FILTERS)]
+        self._load_data()
