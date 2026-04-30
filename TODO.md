@@ -2,24 +2,13 @@
 
 Branch: `jake/tui`. See `TUI_ROADMAP.md` for the longer-form context. This doc tracks the **current** work streams.
 
-## In progress
+## Done
 
-### Roborev findings (jobs 611, 612)
-- Awaiting: roborev compact review + full review on the current branch.
-- Action items: address findings from both reviews on this branch before any of the streams below ship.
+- ✅ Roborev review backlog closed: jobs 610 (compact), 612 (full), 613, 614, 615, 616, 617. Net effect: pipeline iteration scoping (`run_infer`/`run_cluster`), UTM projection in `run_validate`, ST_Distance_Sphere, IndexIVFFlat fallback, tile-cache thread safety, idempotent review-job lifecycle, undo audit trail, queue filter binding, NaN class detection, schema-drift error w/ migration guidance, ledger sentinel→explicit reviewed_at.
+- ✅ Search screen cut from TUI app (key `3` removed, files left in tree).
+- ✅ Queue filter binding (`f`) wired to a working status-cycle.
 
 ## Cuts / parking lot
-
-### Search screen — likely cut
-The TUI Search screen (key `3`, `geovibes/cli/tui/screens/search.py`) is currently a dead end:
-- No way to seed initial points (no lat/lon input, no file load).
-- Can only label results from a query that needs labels to exist.
-- Duplicates functionality available cleaner from CLI + Jupyter UI.
-
-**Decision:** cut from the default TUI for now (remove the `3` binding and route, keep the file in-tree but unregistered). Revisit if/when we add a coordinate-input modal.
-- [ ] Remove `SearchScreen` from `GeoVibesTUI.SCREENS` and bindings in `geovibes/cli/tui/app.py`.
-- [ ] Drop the `Similarity search` footer label.
-- [ ] Leave `search.py` and `geovibes/cli/search.py` (the latter is still used by the CLI / future agents).
 
 ### Deep rendering review — deferred
 The TGP / halfcell tile pipeline in `ReviewScreen` works but has accumulated a lot of churn (~15 commits). We want to be **decisive about look and feel now** and do the deep rendering rework later.
