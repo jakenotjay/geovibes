@@ -57,11 +57,12 @@ class QueueScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._filter = "all"
+        self._filter_cycle: list = list(self.BASE_FILTERS)
 
-    def _filter_options(self, jobs) -> list:
+    def _compute_filter_cycle(self, jobs) -> list:
         if jobs.empty:
             return list(self.BASE_FILTERS)
-        seen = sorted(s for s in jobs["status"].dropna().unique() if s)
+        seen = sorted(s for s in jobs["status"].dropna().unique() if s != "")
         extras = [s for s in seen if s not in self.BASE_FILTERS]
         return list(self.BASE_FILTERS) + extras
 
@@ -87,6 +88,7 @@ class QueueScreen(Screen):
         project_dir = self.app.project_dir
         jobs = load_jobs(project_dir)
         reviews = load_reviews(project_dir)
+        self._filter_cycle = self._compute_filter_cycle(jobs)
 
         pending = len(reviews[reviews["status"] == "pending"]) if not reviews.empty else 0
         accepted = len(reviews[reviews["status"] == "accepted"]) if not reviews.empty else 0
@@ -126,8 +128,7 @@ class QueueScreen(Screen):
         self._load_data()
 
     def action_filter(self) -> None:
-        jobs = load_jobs(self.app.project_dir)
-        options = self._filter_options(jobs)
+        options = self._filter_cycle
         idx = options.index(self._filter) if self._filter in options else 0
         self._filter = options[(idx + 1) % len(options)]
         self._load_data()

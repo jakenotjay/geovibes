@@ -231,7 +231,16 @@ def run_infer(
             "reviewed_at": pd.array([None] * n_det, dtype="datetime64[us, UTC]"),
         })
 
-        reviews_df = pd.concat([existing, new_rows], ignore_index=True) if not existing.empty else new_rows
+        if not existing.empty:
+            if set(new_rows.columns) != set(existing.columns):
+                raise ValueError(
+                    f"Schema drift between existing reviews and new detections: "
+                    f"existing={sorted(existing.columns)}, new={sorted(new_rows.columns)}"
+                )
+            new_rows = new_rows[existing.columns]
+            reviews_df = pd.concat([existing, new_rows], ignore_index=True)
+        else:
+            reviews_df = new_rows
         save_reviews(project_dir, reviews_df)
 
         update_job(
@@ -292,6 +301,7 @@ def run_cluster(
         db = DBSCAN(eps=eps_rad, min_samples=min_samples, metric="haversine")
         cluster_labels = db.fit_predict(coords_rad)
 
+        reviews.loc[iter_mask, "cluster_id"] = pd.NA
         reviews.loc[valid_mask, "cluster_id"] = pd.array(
             cluster_labels.tolist(), dtype="Int64"
         )
@@ -413,7 +423,13 @@ def _load_label_file(path: Path) -> pd.DataFrame:
                 "geovibes_sampled_neg": 0, "sampled": 0,
             }
             normalised = df["class"].str.lower()
-            unknown = set(normalised[~normalised.isin(class_to_label)].dropna().unique())
+            n_missing = int(normalised.isna().sum())
+            if n_missing:
+                raise ValueError(
+                    f"Label file {path.name} has {n_missing} rows with missing 'class'. "
+                    f"Drop them, fill them, or supply an explicit 'label' column."
+                )
+            unknown = set(normalised[~normalised.isin(class_to_label)].unique())
             if unknown:
                 raise ValueError(
                     f"Label file {path.name} has unmapped class values: {sorted(unknown)}. "

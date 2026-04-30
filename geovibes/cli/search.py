@@ -23,6 +23,13 @@ def load_faiss_index(index_path: Path) -> faiss.Index:
 def nearest_point(
     conn: duckdb.DuckDBPyConnection, lon: float, lat: float
 ) -> Optional[Tuple]:
+    """Return the nearest embedding to (lon, lat).
+
+    Assumes `geo_embeddings.geometry` is stored in WGS84 (EPSG:4326);
+    `ST_Distance_Sphere` requires lon/lat inputs and returns meters.
+    The CLI loader writes 4326; if a future loader stores projected
+    coordinates, this query must be updated.
+    """
     sql = """
     SELECT id, ST_AsGeoJSON(geometry) as geometry,
            ST_Distance_Sphere(geometry, ST_Point(?, ?)) AS dist_m,

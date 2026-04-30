@@ -213,14 +213,25 @@ def save_reviews(project_dir: Path, df: pd.DataFrame) -> None:
         _write_reviews(project_dir, df)
 
 
+_UNSET = object()
+
+
 def update_review(
     project_dir: Path,
     detection_id: int,
     status: str,
     reviewer: Optional[str],
     review_job_id: Optional[int] = None,
-    reviewed_at: Optional[datetime] = None,
+    reviewed_at: Any = _UNSET,
 ) -> None:
+    """Update a review row.
+
+    `reviewed_at` semantics:
+      - omitted (default): stamped with current UTC time
+      - explicit datetime: written as-is
+      - explicit None / pd.NaT: row is marked as having no review timestamp
+        (used by undo when restoring a previously-unreviewed row)
+    """
     with _file_lock(project_dir, "reviews"):
         _update_review_locked(project_dir, detection_id, status, reviewer, review_job_id, reviewed_at)
 
@@ -233,7 +244,10 @@ def _update_review_locked(project_dir, detection_id, status, reviewer, review_jo
 
     reviews.loc[mask, "status"] = status
     reviews.loc[mask, "reviewer"] = reviewer
-    reviews.loc[mask, "reviewed_at"] = reviewed_at if reviewed_at is not None else _now()
+    if reviewed_at is _UNSET:
+        reviews.loc[mask, "reviewed_at"] = _now()
+    else:
+        reviews.loc[mask, "reviewed_at"] = pd.NaT if reviewed_at is None else reviewed_at
     if review_job_id is not None:
         reviews.loc[mask, "review_job_id"] = review_job_id
 
