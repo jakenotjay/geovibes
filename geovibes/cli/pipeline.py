@@ -232,10 +232,18 @@ def run_infer(
         })
 
         if not existing.empty:
-            if set(new_rows.columns) != set(existing.columns):
+            existing_cols = set(existing.columns)
+            new_cols = set(new_rows.columns)
+            if existing_cols != new_cols:
+                added = sorted(new_cols - existing_cols)
+                removed = sorted(existing_cols - new_cols)
+                reviews_path = project_dir / "reviews.parquet"
                 raise ValueError(
-                    f"Schema drift between existing reviews and new detections: "
-                    f"existing={sorted(existing.columns)}, new={sorted(new_rows.columns)}"
+                    f"Schema drift between existing reviews and new detections "
+                    f"(added: {added}, removed: {removed}). "
+                    f"To rebuild from scratch, delete {reviews_path} and re-run infer; "
+                    f"to migrate, add the new columns to existing rows with safe defaults "
+                    f"before running infer again."
                 )
             new_rows = new_rows[existing.columns]
             reviews_df = pd.concat([existing, new_rows], ignore_index=True)

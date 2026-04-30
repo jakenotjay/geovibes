@@ -11,7 +11,7 @@ except ImportError:
     _HAS_FCNTL = False
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import pandas as pd
 import pyarrow as pa
@@ -213,7 +213,22 @@ def save_reviews(project_dir: Path, df: pd.DataFrame) -> None:
         _write_reviews(project_dir, df)
 
 
-_UNSET = object()
+class _UnsetType:
+    """Sentinel type for `update_review.reviewed_at` so we can distinguish
+    'caller omitted the argument' (stamp now) from 'caller passed None'
+    (write NaT)."""
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __repr__(self) -> str:
+        return "<UNSET>"
+
+
+_UNSET = _UnsetType()
 
 
 def update_review(
@@ -222,7 +237,7 @@ def update_review(
     status: str,
     reviewer: Optional[str],
     review_job_id: Optional[int] = None,
-    reviewed_at: Any = _UNSET,
+    reviewed_at: Union[datetime, None, _UnsetType] = _UNSET,
 ) -> None:
     """Update a review row.
 
