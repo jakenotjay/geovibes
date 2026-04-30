@@ -95,7 +95,7 @@ async def test_switch_to_review_screen(tmp_path):
         meta = screen.query_one("#meta-panel")
         assert meta is not None
         content = str(meta.render())
-        assert "Detection #1/20" in content
+        assert "Detection #1/4" in content
 
 
 async def test_review_accept_advances(tmp_path):

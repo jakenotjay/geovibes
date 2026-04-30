@@ -170,11 +170,9 @@ class ReviewScreen(Screen):
         self._reviewed_count = 0
         self._sort_mode = "cluster"
         self._tile_cache: dict = {}
+        self._cache_lock = threading.Lock()
         self._prefetching: set = set()
-        self._pending_result: Optional[Tuple[int, Optional[int], object]] = None
-        self._fetch_generation = 0
         self._panel_dims: Tuple[int, int] = (80, 40)
-        self._tile_poll_timer = None
         self._cache_order: list = []
 
     def compose(self) -> ComposeResult:
@@ -255,7 +253,7 @@ class ReviewScreen(Screen):
         )
 
     def _finish_review_job(self) -> None:
-        """Mark the review job as done when leaving the screen."""
+        """Mark the review job as done when leaving the screen. Idempotent."""
         if self._review_job_id is None:
             return
         project_dir = self.app.project_dir
@@ -264,6 +262,7 @@ class ReviewScreen(Screen):
             status="done",
             summary=f"{self._reviewed_count} reviewed",
         )
+        self._review_job_id = None
 
     def _current_detection(self) -> Optional[dict]:
         if not self._detection_ids or self._index >= len(self._detection_ids):
@@ -342,13 +341,13 @@ class ReviewScreen(Screen):
         bar = "█" * filled + "░" * (30 - filled)
 
         reviewed = self._reviewed_count
-        mode_label = {"confident": "Confident", "cluster": "Cluster rep", "uncertain": "Uncertain"}
+        progress_mode_labels = {"confident": "Confident", "cluster": "Cluster rep", "uncertain": "Uncertain"}
         progress.update(
             f" {bar} {pos}/{total}  "
             f"[green]A:{self._count_status('accepted')}[/]  "
             f"[red]R:{self._count_status('rejected')}[/]  "
             f"Session: {reviewed}  "
-            f"[bold cyan]Mode: {mode_label[self._sort_mode]}[/] (m)"
+            f"[bold cyan]Mode: {progress_mode_labels[self._sort_mode]}[/] (m)"
         )
 
         if not skip_tile:
@@ -399,13 +398,14 @@ class ReviewScreen(Screen):
         self._prefetch_upcoming()
 
     def _cache_put(self, det_id, renderable) -> None:
-        if det_id in self._tile_cache:
-            return
-        self._tile_cache[det_id] = renderable
-        self._cache_order.append(det_id)
-        while len(self._cache_order) > 100:
-            evict = self._cache_order.pop(0)
-            self._tile_cache.pop(evict, None)
+        with self._cache_lock:
+            if det_id in self._tile_cache:
+                return
+            self._tile_cache[det_id] = renderable
+            self._cache_order.append(det_id)
+            while len(self._cache_order) > 100:
+                evict = self._cache_order.pop(0)
+                self._tile_cache.pop(evict, None)
 
     def _prefetch_upcoming(self) -> None:
         for offset in range(1, self.PREFETCH_AHEAD + 1):
@@ -462,6 +462,8 @@ class ReviewScreen(Screen):
         self._undo_stack.append({
             "detection_id": det["detection_id"],
             "old_status": det["status"],
+            "old_reviewer": det.get("reviewer"),
+            "old_reviewed_at": det.get("reviewed_at"),
             "index": self._index,
         })
 
@@ -474,7 +476,6 @@ class ReviewScreen(Screen):
             review_job_id=self._review_job_id,
         )
 
-        self._reviews = load_reviews(project_dir)
         self._reviewed_count += 1
 
         old_index = self._index
@@ -485,10 +486,6 @@ class ReviewScreen(Screen):
             self._index = min(old_index + 1, max(0, len(self._detection_ids) - 1))
 
         self._show_current()
-
-    def _advance(self) -> None:
-        if self._index < len(self._detection_ids) - 1:
-            self._index += 1
 
     def action_accept(self) -> None:
         self._apply_verdict("accepted")
@@ -504,14 +501,16 @@ class ReviewScreen(Screen):
             return
         entry = self._undo_stack.pop()
         project_dir = self.app.project_dir
+        old_reviewed_at = entry.get("old_reviewed_at")
+        if old_reviewed_at is not None and pd.isna(old_reviewed_at):
+            old_reviewed_at = None
         update_review(
             project_dir,
             detection_id=entry["detection_id"],
             status=entry["old_status"],
-            reviewer="human",
-            review_job_id=self._review_job_id,
+            reviewer=entry.get("old_reviewer"),
+            reviewed_at=old_reviewed_at,
         )
-        self._reviews = load_reviews(project_dir)
         self._reviewed_count = max(0, self._reviewed_count - 1)
         self._load_detections()
         self._index = min(entry["index"], max(0, len(self._detection_ids) - 1))

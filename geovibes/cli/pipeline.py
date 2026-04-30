@@ -208,8 +208,17 @@ def run_infer(
         det_path.parent.mkdir(exist_ok=True)
         all_detections.to_parquet(det_path)
 
-        reviews_df = pd.DataFrame({
-            "detection_id": range(1, n_det + 1),
+        from geovibes.cli.ledger import load_reviews
+
+        existing = load_reviews(project_dir)
+        if not existing.empty:
+            existing = existing[existing["iteration"] != iteration]
+            next_det_id = int(existing["detection_id"].max()) + 1 if not existing.empty else 1
+        else:
+            next_det_id = 1
+
+        new_rows = pd.DataFrame({
+            "detection_id": range(next_det_id, next_det_id + n_det),
             "embedding_id": all_detections["id"].values,
             "geometry": all_detections["geometry"].values,
             "cluster_id": pd.array([None] * n_det, dtype="Int64"),
@@ -221,6 +230,8 @@ def run_infer(
             "reviewer": pd.array([None] * n_det, dtype="string"),
             "reviewed_at": pd.array([None] * n_det, dtype="datetime64[us, UTC]"),
         })
+
+        reviews_df = pd.concat([existing, new_rows], ignore_index=True) if not existing.empty else new_rows
         save_reviews(project_dir, reviews_df)
 
         update_job(
@@ -256,7 +267,12 @@ def run_cluster(
             return {"n_clusters": 0}
 
         import shapely.wkb
-        valid_mask = reviews["geometry"].notna()
+        iter_mask = reviews["iteration"] == iteration
+        if not iter_mask.any():
+            update_job(project_dir, job_id, status="done", summary=f"No detections at iteration {iteration}")
+            return {"n_clusters": 0}
+
+        valid_mask = iter_mask & reviews["geometry"].notna()
         valid_reviews = reviews[valid_mask].copy()
 
         if valid_reviews.empty:
@@ -276,7 +292,6 @@ def run_cluster(
         db = DBSCAN(eps=eps_rad, min_samples=min_samples, metric="haversine")
         cluster_labels = db.fit_predict(coords_rad)
 
-        reviews["cluster_id"] = pd.array([None] * len(reviews), dtype="Int64")
         reviews.loc[valid_mask, "cluster_id"] = pd.array(
             cluster_labels.tolist(), dtype="Int64"
         )
@@ -305,8 +320,6 @@ def run_validate(
 ) -> Dict:
     import geopandas as gpd
     import shapely.wkb
-    from shapely.geometry import Point
-    from shapely.ops import nearest_points
 
     start = time.perf_counter()
 
@@ -321,10 +334,7 @@ def run_validate(
         return {}
 
     valid_mask = reviews["geometry"].notna()
-    det_points = []
-    for geom_bytes in reviews[valid_mask]["geometry"]:
-        point = shapely.wkb.loads(geom_bytes)
-        det_points.append(point)
+    det_points = [shapely.wkb.loads(b) for b in reviews[valid_mask]["geometry"]]
 
     if use_clusters:
         cluster_ids = reviews.loc[valid_mask, "cluster_id"]
@@ -333,54 +343,54 @@ def run_validate(
             crs="EPSG:4326",
         )
         clustered = det_df[det_df["cluster_id"].notna() & (det_df["cluster_id"] >= 0)]
-        dissolved = clustered.to_crs(3857).dissolve(by="cluster_id")
-        centroid_geoms = dissolved.centroid.to_crs(4326)
-        det_gdf = gpd.GeoDataFrame(geometry=centroid_geoms.values, crs="EPSG:4326")
+        if clustered.empty:
+            det_gdf = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+        else:
+            utm_for_dissolve = clustered.estimate_utm_crs()
+            dissolved = clustered.to_crs(utm_for_dissolve).dissolve(by="cluster_id")
+            centroid_geoms = dissolved.centroid.to_crs(4326)
+            det_gdf = gpd.GeoDataFrame(geometry=centroid_geoms.values, crs="EPSG:4326")
         click.echo(f"Detections: {len(det_gdf)} cluster centroids")
     else:
         det_gdf = gpd.GeoDataFrame({"geometry": det_points}, crs="EPSG:4326")
         click.echo(f"Detections: {len(det_gdf)} raw points")
 
-    # Project to a metric CRS for distance calculations
-    det_proj = det_gdf.to_crs(3857)
-    truth_proj = truth.to_crs(3857)
+    if det_gdf.empty:
+        n_truth = len(truth)
+        click.echo(f"\nValidation results (buffer={buffer_m}m): no detections")
+        click.echo(f"  TP=0  FP=0  FN={n_truth}  Precision=0.000  Recall=0.000  F1=0.000")
+        return {"tp": 0, "fp": 0, "fn": n_truth, "precision": 0.0, "recall": 0.0, "f1": 0.0}
 
-    # For each truth point, find nearest detection
+    utm_crs = det_gdf.estimate_utm_crs()
+    det_proj = det_gdf.to_crs(utm_crs)
+    truth_proj = truth.to_crs(utm_crs)
+
     from shapely import STRtree
-    det_tree = STRtree(det_proj.geometry.values)
 
-    tp = 0
-    fn_list = []
-    for idx, truth_row in truth_proj.iterrows():
-        nearest_idx = det_tree.nearest(truth_row.geometry)
-        nearest_det = det_proj.geometry.values[nearest_idx]
-        dist = truth_row.geometry.distance(nearest_det)
-        if dist <= buffer_m:
-            tp += 1
-        else:
-            fn_list.append(idx)
-
-    # For each detection, check if any truth within buffer
     truth_tree = STRtree(truth_proj.geometry.values)
+    matched_truth: set = set()
     fp = 0
     for det_geom in det_proj.geometry.values:
-        nearest_idx = truth_tree.nearest(det_geom)
+        nearest_idx = int(truth_tree.nearest(det_geom))
         nearest_truth = truth_proj.geometry.values[nearest_idx]
-        dist = det_geom.distance(nearest_truth)
-        if dist > buffer_m:
+        if det_geom.distance(nearest_truth) <= buffer_m:
+            matched_truth.add(nearest_idx)
+        else:
             fp += 1
 
+    tp = len(matched_truth)
     fn = len(truth) - tp
-    precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-    recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+    n_det = len(det_proj)
+    precision = tp / n_det if n_det > 0 else 0.0
+    recall = tp / len(truth) if len(truth) > 0 else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
 
     elapsed = time.perf_counter() - start
 
-    click.echo(f"\nValidation results (buffer={buffer_m}m):")
-    click.echo(f"  True positives:  {tp}")
-    click.echo(f"  False positives: {fp}")
-    click.echo(f"  False negatives: {fn}")
+    click.echo(f"\nValidation results (buffer={buffer_m}m, CRS={utm_crs.to_string()}):")
+    click.echo(f"  True positives:  {tp}  (unique truth points matched)")
+    click.echo(f"  False positives: {fp}  (detections with no truth in buffer)")
+    click.echo(f"  False negatives: {fn}  (truth points unmatched)")
     click.echo(f"  Precision: {precision:.3f}")
     click.echo(f"  Recall:    {recall:.3f}")
     click.echo(f"  F1:        {f1:.3f}")
@@ -402,7 +412,14 @@ def _load_label_file(path: Path) -> pd.DataFrame:
                 "geovibes_neg": 0, "negative": 0, "relabel_neg": 0,
                 "geovibes_sampled_neg": 0, "sampled": 0,
             }
-            df["label"] = df["class"].str.lower().map(class_to_label).fillna(0).astype(int)
+            normalised = df["class"].str.lower()
+            unknown = set(normalised[~normalised.isin(class_to_label)].dropna().unique())
+            if unknown:
+                raise ValueError(
+                    f"Label file {path.name} has unmapped class values: {sorted(unknown)}. "
+                    f"Add them to class_to_label or supply an explicit 'label' column."
+                )
+            df["label"] = normalised.map(class_to_label).astype(int)
     else:
         raise ValueError(f"Unsupported label file format: {suffix}")
 

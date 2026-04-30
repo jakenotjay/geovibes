@@ -309,7 +309,7 @@ class SearchScreen(Screen):
         geom_lookup = {}
         if self._conn and all_ids:
             geo_df = self._conn.execute(
-                f"SELECT id, ST_AsBinary(geometry) as geometry FROM geo_embeddings WHERE id IN ({','.join(['?' for _ in all_ids])})",
+                f"SELECT id, ST_AsWKB(geometry) as geometry FROM geo_embeddings WHERE id IN ({','.join(['?' for _ in all_ids])})",
                 all_ids,
             ).fetchdf()
             geom_lookup = dict(zip(geo_df["id"], geo_df["geometry"]))

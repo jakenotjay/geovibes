@@ -217,14 +217,15 @@ def update_review(
     project_dir: Path,
     detection_id: int,
     status: str,
-    reviewer: str,
+    reviewer: Optional[str],
     review_job_id: Optional[int] = None,
+    reviewed_at: Optional[datetime] = None,
 ) -> None:
     with _file_lock(project_dir, "reviews"):
-        _update_review_locked(project_dir, detection_id, status, reviewer, review_job_id)
+        _update_review_locked(project_dir, detection_id, status, reviewer, review_job_id, reviewed_at)
 
 
-def _update_review_locked(project_dir, detection_id, status, reviewer, review_job_id):
+def _update_review_locked(project_dir, detection_id, status, reviewer, review_job_id, reviewed_at):
     reviews = load_reviews(project_dir)
     mask = reviews["detection_id"] == detection_id
     if not mask.any():
@@ -232,7 +233,7 @@ def _update_review_locked(project_dir, detection_id, status, reviewer, review_jo
 
     reviews.loc[mask, "status"] = status
     reviews.loc[mask, "reviewer"] = reviewer
-    reviews.loc[mask, "reviewed_at"] = _now()
+    reviews.loc[mask, "reviewed_at"] = reviewed_at if reviewed_at is not None else _now()
     if review_job_id is not None:
         reviews.loc[mask, "review_job_id"] = review_job_id
 
