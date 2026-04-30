@@ -47,7 +47,7 @@ def _status_markup(status: str) -> str:
 class QueueScreen(Screen):
     """Job queue showing all operations performed on the project."""
 
-    FILTERS = ["all", "running", "failed", "done"]
+    BASE_FILTERS = ["all", "running", "done", "failed"]
 
     BINDINGS = [
         Binding("r", "refresh_table", "Refresh"),
@@ -57,6 +57,13 @@ class QueueScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._filter = "all"
+
+    def _filter_options(self, jobs) -> list:
+        if jobs.empty:
+            return list(self.BASE_FILTERS)
+        seen = sorted(s for s in jobs["status"].dropna().unique() if s)
+        extras = [s for s in seen if s not in self.BASE_FILTERS]
+        return list(self.BASE_FILTERS) + extras
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -86,10 +93,7 @@ class QueueScreen(Screen):
         rejected = len(reviews[reviews["status"] == "rejected"]) if not reviews.empty else 0
         total_det = len(reviews)
 
-        if self._filter != "all" and not jobs.empty:
-            visible_jobs = jobs[jobs["status"] == self._filter]
-        else:
-            visible_jobs = jobs
+        visible_jobs = jobs if self._filter == "all" else jobs[jobs["status"] == self._filter]
 
         filter_label = f"[bold cyan]Filter: {self._filter}[/] (f)"
         header = self.query_one("#queue-header", Static)
@@ -122,6 +126,8 @@ class QueueScreen(Screen):
         self._load_data()
 
     def action_filter(self) -> None:
-        idx = self.FILTERS.index(self._filter)
-        self._filter = self.FILTERS[(idx + 1) % len(self.FILTERS)]
+        jobs = load_jobs(self.app.project_dir)
+        options = self._filter_options(jobs)
+        idx = options.index(self._filter) if self._filter in options else 0
+        self._filter = options[(idx + 1) % len(options)]
         self._load_data()
