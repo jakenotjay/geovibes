@@ -132,7 +132,14 @@ def test_update_review(tmp_path):
     }])
     save_reviews(project, df)
 
-    update_review(project, detection_id=1, status="accepted", reviewer="human")
+    from datetime import datetime, timezone
+    update_review(
+        project,
+        detection_id=1,
+        status="accepted",
+        reviewer="human",
+        reviewed_at=datetime.now(timezone.utc),
+    )
 
     loaded = load_reviews(project)
     assert loaded.iloc[0]["status"] == "accepted"

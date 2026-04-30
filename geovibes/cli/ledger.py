@@ -11,7 +11,7 @@ except ImportError:
     _HAS_FCNTL = False
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import pyarrow as pa
@@ -213,40 +213,17 @@ def save_reviews(project_dir: Path, df: pd.DataFrame) -> None:
         _write_reviews(project_dir, df)
 
 
-class _UnsetType:
-    """Sentinel type for `update_review.reviewed_at` so we can distinguish
-    'caller omitted the argument' (stamp now) from 'caller passed None'
-    (write NaT)."""
-    _instance = None
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
-    def __repr__(self) -> str:
-        return "<UNSET>"
-
-
-_UNSET = _UnsetType()
-
-
 def update_review(
     project_dir: Path,
     detection_id: int,
     status: str,
     reviewer: Optional[str],
+    reviewed_at: Optional[datetime],
     review_job_id: Optional[int] = None,
-    reviewed_at: Union[datetime, None, _UnsetType] = _UNSET,
 ) -> None:
-    """Update a review row.
-
-    `reviewed_at` semantics:
-      - omitted (default): stamped with current UTC time
-      - explicit datetime: written as-is
-      - explicit None / pd.NaT: row is marked as having no review timestamp
-        (used by undo when restoring a previously-unreviewed row)
-    """
+    """Update a review row. `reviewed_at=None` writes NaT (used by undo
+    when restoring a previously-unreviewed row); pass `datetime.now(UTC)`
+    explicitly to stamp the moment of review."""
     with _file_lock(project_dir, "reviews"):
         _update_review_locked(project_dir, detection_id, status, reviewer, review_job_id, reviewed_at)
 
@@ -259,10 +236,7 @@ def _update_review_locked(project_dir, detection_id, status, reviewer, review_jo
 
     reviews.loc[mask, "status"] = status
     reviews.loc[mask, "reviewer"] = reviewer
-    if reviewed_at is _UNSET:
-        reviews.loc[mask, "reviewed_at"] = _now()
-    else:
-        reviews.loc[mask, "reviewed_at"] = pd.NaT if reviewed_at is None else reviewed_at
+    reviews.loc[mask, "reviewed_at"] = pd.NaT if reviewed_at is None else reviewed_at
     if review_job_id is not None:
         reviews.loc[mask, "review_job_id"] = review_job_id
 

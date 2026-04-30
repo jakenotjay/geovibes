@@ -5,6 +5,7 @@ import os
 import sys
 import threading
 import warnings
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -473,6 +474,7 @@ class ReviewScreen(Screen):
             detection_id=int(det["detection_id"]),
             status=status,
             reviewer="human",
+            reviewed_at=datetime.now(timezone.utc),
             review_job_id=self._review_job_id,
         )
 
